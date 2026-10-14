@@ -1,0 +1,74 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # スマホからzipをアップロードしたときだけ、中身をファイルに展開して保存する
+      - name: Unpack uploaded zip
+        run: |
+          set -e
+          shopt -s nullglob
+          zips=(pocketstation*.zip)
+          if [ ${#zips[@]} -gt 0 ]; then
+            unzip -o "${zips[0]}" -x '.github/*'
+            git rm -q -- "${zips[@]}"
+            git add -A
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -q -m "アップロードしたzipをファイルに展開"
+            git push
+          fi
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+
+      - name: Build
+        run: |
+          make
+          make converter
+
+      - name: Test
+        run: |
+          python3 tests/test_player.py build/anime.bin 0
+          python3 tests/test_player.py build/anime.bin 1
+          python3 tests/test_player.py build/anime.bin 2
+
+      - name: Assemble site
+        run: |
+          mkdir -p site/download
+          cp build/dot-studio.html site/index.html
+          cp build/anime.mcr build/anime.mcs build/anime.bin site/download/
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
