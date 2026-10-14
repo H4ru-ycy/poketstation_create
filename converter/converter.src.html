@@ -1,0 +1,1795 @@
+<title>ポケステ ドット絵工房</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: 一画面の作業台。左=液晶プレビュー・コマ列・ドット編集、右=画像変換・書き出し。スマホでは縦一列 */
+:root {
+  --bg: #e9ecee;          /* ポケステ本体の白グレー樹脂 */
+  --surface: #f7f8f9;
+  --ink: #1b1f23;
+  --muted: #5b646d;
+  --line: #cdd3d8;
+  --accent: #c8322a;      /* 本体の赤LED */
+  --accent-ink: #ffffff;
+  --lcd: #b7c0b2;         /* 反射型液晶の地 (テーマに関係なく同じ) */
+  --lcd-ink: #1a211c;
+  --lcd-ghost: rgba(26, 33, 28, 0.08);
+  --bezel: #2b3035;
+  --t1: #c8322a; --t2: #2f6fb3; --t3: #a86d12; --t4: #6a4fb0;   /* トラック色: メロディ/ハモリ/和音/ベース */
+  --roll-white: #fbfcfc; --roll-black: #eceff2; --roll-grid: #e1e5e9; --roll-beat: #c4ccd3; --roll-bar: #7f8a95;
+  --font-display: "DotGothic16", "Hiragino Kaku Gothic ProN", "Yu Gothic", monospace;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a; --surface: #1c2024; --ink: #e5e8eb; --muted: #9aa3ac; --line: #30363c;
+    --accent: #ff5b4f; --accent-ink: #1b0d0c; --bezel: #0b0d0f; color-scheme: dark;
+    --t1: #ff6b5f; --t2: #64a6ff; --t3: #e3a93e; --t4: #a88cff; --roll-white: #20252a; --roll-black: #191d21; --roll-grid: #2b3137; --roll-beat: #3b444c; --roll-bar: #6f7b87;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171a; --surface: #1c2024; --ink: #e5e8eb; --muted: #9aa3ac; --line: #30363c;
+  --accent: #ff5b4f; --accent-ink: #1b0d0c; --bezel: #0b0d0f; color-scheme: dark;
+  --t1: #ff6b5f; --t2: #64a6ff; --t3: #e3a93e; --t4: #a88cff; --roll-white: #20252a; --roll-black: #191d21; --roll-grid: #2b3137; --roll-beat: #3b444c; --roll-bar: #6f7b87;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 16px 48px;
+}
+.wrap { max-width: 1120px; margin-inline: auto; display: grid; gap: 20px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.top h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(24px, 6vw, 34px); line-height: 1.15; margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+.top h1 .led { display: inline-block; width: 0.32em; height: 0.32em; border-radius: 50%; background: var(--accent); vertical-align: 0.4em; margin-left: 0.25em; box-shadow: 0 0 8px var(--accent); }
+.spec { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
+
+.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "export" "help"; }
+@media (min-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "export help"; align-items: start; }
+}
+.music { grid-area: music; }
+.stage { grid-area: stage; } .import { grid-area: import; } .edit { grid-area: edit; } .export { grid-area: export; } .help { grid-area: help; }
+section { min-width: 0; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 0; line-height: 1.3; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h2 small { font-family: var(--font-body); font-size: 12.5px; color: var(--muted); letter-spacing: 0.02em; }
+.note { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* ---- 液晶 ---- */
+.device { background: var(--bezel); border-radius: 18px 18px 26px 26px; padding: 18px 18px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; justify-items: center; }
+.lcd-frame { background: #0f1214; padding: 10px; border-radius: 6px; width: min(100%, 340px); }
+#lcd { display: block; width: 100%; height: auto; aspect-ratio: 1; image-rendering: pixelated; border-radius: 2px; }
+.device-row { width: min(100%, 340px); display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #c9d0d5; font-family: var(--font-display); font-size: 14px; }
+.device-row .count { font-variant-numeric: tabular-nums; }
+.device-led { width: 8px; height: 8px; border-radius: 50%; background: #5a2522; }
+.device-led.on { background: #ff4a3d; box-shadow: 0 0 6px #ff4a3d; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.speed { display: flex; align-items: center; gap: 6px; }
+.speed output { min-width: 9.5em; text-align: center; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+
+/* ---- ボタン類 ---- */
+button, .btn {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; min-height: 38px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.2;
+}
+button:hover, .btn:hover { border-color: var(--muted); }
+button:focus-visible, .btn:focus-within, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary, .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+button.icon { min-width: 38px; padding: 7px 8px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.btn { position: relative; }
+
+/* ---- コマ列 ---- */
+.strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; scroll-snap-type: x proximity; }
+.thumb { flex: none; display: grid; gap: 2px; justify-items: center; padding: 4px; border: 2px solid transparent; border-radius: 8px; background: none; min-height: 0; scroll-snap-align: start; }
+.thumb canvas { width: 52px; height: 52px; image-rendering: pixelated; display: block; border-radius: 3px; }
+.thumb span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.thumb.sel { border-color: var(--accent); }
+.thumb.playing span { color: var(--accent); font-weight: 700; }
+
+/* ---- 編集 ---- */
+.editor-box { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; }
+#ed { width: min(100%, 512px); height: auto; aspect-ratio: 1; display: block; touch-action: none; cursor: crosshair; border-radius: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.toolbar .sep { width: 1px; background: var(--line); margin-inline: 2px; }
+
+/* ---- 変換 ---- */
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 16px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 12.5px; color: var(--muted); letter-spacing: 0.03em; display: flex; justify-content: space-between; gap: 8px; }
+.field label output { color: var(--ink); font-variant-numeric: tabular-nums; }
+select, input[type=text], input[type=number] { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 38px; width: 100%; min-width: 0; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.field label.check, .check { display: flex; justify-content: flex-start; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); min-height: 38px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.conv-preview { display: flex; flex-wrap: wrap; gap: 6px; min-height: 0; }
+.conv-preview canvas { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 3px; }
+.empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13.5px; text-align: center; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.drop.over { outline: 2px dashed var(--accent); outline-offset: 4px; }
+
+/* ---- 書き出し ---- */
+.meter { display: grid; gap: 6px; }
+.bar { height: 10px; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; display: grid; grid-template-columns: repeat(15, 1fr); gap: 1px; }
+.bar i { background: var(--line); }
+.bar i.used { background: var(--accent); }
+.meter p { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.idrow { display: flex; align-items: center; gap: 0; min-width: 0; }
+.idrow code { font-size: 13px; padding: 8px 8px; background: var(--bg); border: 1px solid var(--line); border-right: 0; border-radius: 8px 0 0 8px; color: var(--muted); white-space: nowrap; }
+.idrow input { border-radius: 0 8px 8px 0; }
+.files { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13.5px; }
+.files li { display: grid; grid-template-columns: 6.5em 1fr; gap: 8px; }
+.files code { font-size: 12.5px; color: var(--ink); }
+.files span { color: var(--muted); }
+
+/* ---- 作曲 ---- */
+.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.tab { flex: none; border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; background: none; padding: 8px 12px; gap: 6px; }
+.tab i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+.tab small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tab[aria-selected="true"] { border-bottom-color: var(--dot); font-weight: 700; background: var(--bg); }
+.tab.muted span { text-decoration: line-through; color: var(--muted); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.seg button { min-width: 0; padding: 6px 10px; font-size: 13px; }
+.roll-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.roll-tools .lbl { font-size: 12.5px; color: var(--muted); }
+.roll-scroll { overflow: auto; max-height: 420px; border: 1px solid var(--line); border-radius: 8px; background: var(--roll-white); overscroll-behavior: contain; }
+.roll-inner { display: flex; width: max-content; }
+#rollKeys { position: sticky; left: 0; z-index: 2; display: block; border-right: 1px solid var(--line); }
+.roll-area { position: relative; }
+#roll { display: block; cursor: pointer; }
+.playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); pointer-events: none; will-change: transform; }
+textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; resize: vertical; }
+.subpanel { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; min-width: 0; }
+.subpanel h3 { font-size: 15px; margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.subpanel h3 small { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.gen-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gen-row select { width: auto; flex: 1 1 180px; }
+.syntax { margin: 0; padding-left: 1.3em; font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+.syntax code, .note code { color: var(--ink); }
+.msg { font-size: 13px; color: var(--accent); margin: 0; }
+.msg:empty { display: none; }
+@media (max-width: 600px) {
+  .wide-sm { grid-column: 1 / -1; }
+  .tab { padding: 8px 9px; }
+  .tab small { display: none; }
+}
+
+.help details { border-top: 1px solid var(--line); padding-top: 10px; }
+.help details:first-of-type { border-top: 0; padding-top: 0; }
+.help summary { cursor: pointer; font-weight: 700; }
+.help ol, .help ul { margin: 8px 0 0; padding-left: 1.4em; display: grid; gap: 4px; font-size: 14px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; margin-top: 8px; }
+.keys dt { font-family: var(--font-display); }
+.keys dd { margin: 0; color: var(--muted); }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); z-index: 10; }
+.sample-tag { font-size: 11.5px; font-family: var(--font-body); background: var(--bg); border: 1px solid var(--line); border-radius: 99px; padding: 1px 8px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>ポケステ ドット絵工房<span class="led" aria-hidden="true"></span></h1>
+    <span class="spec">32×32ドット・白黒 ／ 1コマ＝1/30秒単位 ／ ポケットステーション用</span>
+  </header>
+
+  <div class="layout">
+    <!-- 液晶プレビュー + コマ列 -->
+    <section class="stage panel" aria-label="プレビュー">
+      <h2>プレビュー <span class="sample-tag" id="sampleTag">サンプル: 弾むボール</span></h2>
+      <div class="device">
+        <div class="device-row"><span>POCKETSTATION</span><span class="device-led" id="led" aria-hidden="true"></span></div>
+        <div class="lcd-frame"><canvas id="lcd" width="352" height="352" aria-label="ポケステ液晶のプレビュー"></canvas></div>
+        <div class="device-row"><span class="count" id="count">1 / 1</span><span id="fps">7.5 fps</span></div>
+      </div>
+      <div class="controls">
+        <button id="play" class="primary" type="button">一時停止</button>
+        <div class="speed">
+          <button id="slower" class="icon" type="button" aria-label="遅く">−</button>
+          <output id="speedOut">1コマ 4/30秒</output>
+          <button id="faster" class="icon" type="button" aria-label="速く">＋</button>
+        </div>
+        <button id="invPrev" type="button" aria-pressed="false">白黒反転</button>
+        <button id="sndPrev" type="button" aria-pressed="false">♪ 曲もいっしょに</button>
+      </div>
+      <div>
+        <div class="strip" id="strip" role="listbox" aria-label="コマ一覧"></div>
+        <div class="toolbar">
+          <button id="fAdd" type="button">＋ 空白コマ</button>
+          <button id="fDup" type="button">複製</button>
+          <button id="fLeft" class="icon" type="button" aria-label="前へ移動">◀</button>
+          <button id="fRight" class="icon" type="button" aria-label="後ろへ移動">▶</button>
+          <button id="fDel" type="button">削除</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 画像から変換 -->
+    <section class="import panel drop" id="importPanel" aria-label="画像から変換">
+      <h2>画像から変換 <small>写真・イラスト・GIF・スプライトシート</small></h2>
+      <div class="row">
+        <label class="btn primary" for="file">画像を選ぶ<input id="file" type="file" accept="image/*" multiple></label>
+        <span class="note" id="srcInfo">複数選ぶとその順にコマになります</span>
+      </div>
+      <div class="fields">
+        <div class="field"><label for="fit">合わせ方</label>
+          <select id="fit"><option value="contain">全体を収める</option><option value="cover" selected>枠いっぱいに切り抜く</option><option value="stretch">引き伸ばす</option></select></div>
+        <div class="field"><label for="dither">ディザ (中間色の表し方)</label>
+          <select id="dither"><option value="none">なし (しきい値)</option><option value="fs">誤差拡散 (Floyd-Steinberg)</option><option value="atkinson" selected>Atkinson (くっきり)</option><option value="bayer">網点 (Bayer 4×4)</option></select></div>
+        <div class="field"><label for="zoom">拡大 <output id="zoomOut">100%</output></label><input id="zoom" type="range" min="50" max="400" value="100"></div>
+        <div class="field"><label for="thr">しきい値 <output id="thrOut">128</output></label><input id="thr" type="range" min="1" max="254" value="128"></div>
+        <div class="field"><label for="offx">左右の位置 <output id="offxOut">0</output></label><input id="offx" type="range" min="-50" max="50" value="0"></div>
+        <div class="field"><label for="offy">上下の位置 <output id="offyOut">0</output></label><input id="offy" type="range" min="-50" max="50" value="0"></div>
+        <div class="field"><label for="bri">明るさ <output id="briOut">0</output></label><input id="bri" type="range" min="-100" max="100" value="0"></div>
+        <div class="field"><label for="con">コントラスト <output id="conOut">0</output></label><input id="con" type="range" min="-100" max="100" value="20"></div>
+        <div class="field"><label for="cols">横に分割 (スプライトシート)</label><input id="cols" type="number" min="1" max="32" value="1" inputmode="numeric"></div>
+        <div class="field"><label for="rows">縦に分割</label><input id="rows" type="number" min="1" max="32" value="1" inputmode="numeric"></div>
+        <div class="field"><label for="bg">透明部分</label>
+          <select id="bg"><option value="white">白にする</option><option value="black">黒にする</option></select></div>
+        <div class="field" style="align-self:end"><label class="check" for="inv"><input id="inv" type="checkbox"> 白黒を反転</label></div>
+      </div>
+      <div class="conv-preview" id="convPreview"><div class="empty" style="flex:1">画像を選ぶと、ここに 32×32 白黒の変換結果が並びます。スライダーを動かすとすぐ反映されます。</div></div>
+      <div class="row">
+        <button id="addFrames" class="primary" type="button" disabled>コマを末尾に追加</button>
+        <button id="replaceFrames" type="button" disabled>今のコマを全部置き換え</button>
+      </div>
+    </section>
+
+    <!-- ドット編集 -->
+    <section class="edit panel" aria-label="ドット編集">
+      <h2>ドット編集 <small id="edLabel">コマ 1</small></h2>
+      <div class="toolbar" role="group" aria-label="描く道具">
+        <button id="tPen" type="button" aria-pressed="true">ペン (黒)</button>
+        <button id="tErase" type="button" aria-pressed="false">消しゴム (白)</button>
+        <button id="tFlip" type="button" aria-pressed="false">反転ペン</button>
+        <span class="sep"></span>
+        <button id="tOnion" type="button" aria-pressed="true">前のコマを薄く表示</button>
+      </div>
+      <div class="editor-box"><canvas id="ed" width="512" height="512" aria-label="32×32ドットの編集キャンバス"></canvas></div>
+      <div class="toolbar">
+        <button id="undo" type="button" disabled>元に戻す</button>
+        <button id="eClear" type="button">全部消す</button>
+        <button id="eInv" type="button">白黒反転</button>
+        <button id="eMirror" type="button">左右反転</button>
+        <span class="sep"></span>
+        <button class="icon" id="sL" type="button" aria-label="左へずらす">←</button>
+        <button class="icon" id="sU" type="button" aria-label="上へずらす">↑</button>
+        <button class="icon" id="sD" type="button" aria-label="下へずらす">↓</button>
+        <button class="icon" id="sR" type="button" aria-label="右へずらす">→</button>
+      </div>
+    </section>
+
+    <!-- 作曲 -->
+    <section class="music panel" aria-label="作曲">
+      <h2>作曲 <small>矩形波4音・16分音符単位・ポケステと同じ音で試聴</small> <span class="sample-tag" id="songTag">サンプル: きらきら星</span></h2>
+      <div class="controls">
+        <button id="mPlay" class="primary" type="button">曲を再生</button>
+        <button id="mUndo" type="button" disabled>元に戻す</button>
+      </div>
+      <div class="fields">
+        <div class="field"><label for="bpm">テンポ (BPM) <output id="bpmOut">120</output></label><input id="bpm" type="range" min="40" max="240" value="120"></div>
+        <div class="field"><label for="bars">長さ (4分の4拍子)</label><select id="bars"></select></div>
+        <div class="field"><label for="key">調 (ハモリの音階)</label><select id="key"></select></div>
+      </div>
+
+      <div class="tabs" id="tabs" role="tablist" aria-label="トラック"></div>
+      <div class="fields">
+        <div class="field"><label for="duty">音色 (波の太さ)</label>
+          <select id="duty"><option value="32">細い・シャープ (12.5%)</option><option value="64">やや細い (25%)</option><option value="128">太い・まるい (50%)</option></select></div>
+        <div class="field"><label for="vol">音量 <output id="volOut">10</output></label><input id="vol" type="range" min="0" max="15" value="10"></div>
+        <div class="field wide-sm" style="align-self:end"><div class="row"><button id="mute" type="button" aria-pressed="false">ミュート</button><button id="tClear" type="button">このトラックを消す</button></div></div>
+      </div>
+
+      <div class="roll-tools">
+        <span class="lbl">置く音の長さ</span>
+        <div class="seg" id="lens" role="group" aria-label="置く音の長さ">
+          <button type="button" data-len="1" aria-pressed="false">16分</button>
+          <button type="button" data-len="2" aria-pressed="false">8分</button>
+          <button type="button" data-len="4" aria-pressed="true">4分</button>
+          <button type="button" data-len="6" aria-pressed="false">付点4分</button>
+          <button type="button" data-len="8" aria-pressed="false">2分</button>
+          <button type="button" data-len="16" aria-pressed="false">全</button>
+        </div>
+        <div class="row"><button id="octDown" class="icon" type="button" aria-label="低い音を表示">▼</button><button id="octUp" class="icon" type="button" aria-label="高い音を表示">▲</button></div>
+      </div>
+      <p class="note">マスをタップすると音符を置き、もう一度タップすると消えます。1つのトラックで同時に鳴る音は1つです。<span id="rangeNote"></span></p>
+      <div class="roll-scroll" id="rollScroll">
+        <div class="roll-inner">
+          <canvas id="rollKeys" aria-hidden="true"></canvas>
+          <div class="roll-area"><canvas id="roll" aria-label="ピアノロール"></canvas><div class="playhead" id="playhead" hidden></div></div>
+        </div>
+      </div>
+
+      <div class="subpanel">
+        <h3>ドレミで入力 <small><span id="mmlTrack">メロディ</span>トラック / <span id="mmlHint">ド = ド5</span></small></h3>
+        <textarea id="mml" rows="3" spellcheck="false" autocapitalize="off" aria-label="ドレミで入力"></textarea>
+        <div class="row"><button id="mmlApply" class="primary" type="button">この内容でトラックを置き換え</button></div>
+        <p class="msg" id="mmlMsg" role="status"></p>
+        <details>
+          <summary class="note">書き方</summary>
+          <ul class="syntax">
+            <li>音名: <code>ド レ ミ ファ ソ ラ シ</code> (<code>C D E F G A B</code> も可)。<code>#</code> で半音上、<code>♭</code> で半音下</li>
+            <li>長さ: 音名のあとに <code>1 2 4 8 16</code> (全・2分・4分・8分・16分)。<code>4.</code> で付点。省略すると4分</li>
+            <li>高さ: <code>↑</code> で1オクターブ上、<code>↓</code> で下 (例 <code>ド↑4</code>)。<code>&gt;</code> <code>&lt;</code> で以降をまとめて上下</li>
+            <li>のばす: <code>ー</code> (4分ぶん)、<code>&amp;8</code> (8分ぶん)。休み: <code>休4</code> または <code>ッ8</code></li>
+            <li><code>|</code> は小節の区切り (見やすくするため。無くても動きます)</li>
+          </ul>
+        </details>
+      </div>
+
+      <div class="subpanel">
+        <h3>コード進行から伴奏を作る <small>ハモリ・和音・ベースを自動で入れます</small></h3>
+        <input id="chords" type="text" spellcheck="false" autocapitalize="off" placeholder="例: C | F C | G7 C" aria-label="コード進行">
+        <p class="note">1小節に1つなら空白区切り。2つ以上なら <code>|</code> で小節を区切ります。曲より短いとくり返します。使えるコード: C, Am, G7, FM7, Dm7, Csus4, Bdim, C/E など</p>
+        <p class="msg" id="chordMsg" role="status"></p>
+        <div class="gen-row"><select id="harmMode" aria-label="ハモリの作り方"><option value="chord">コードに合う下の音</option><option value="down">3度下 (調の音階)</option><option value="up">3度上 (調の音階)</option></select><button id="genHarm" type="button">ハモリを作る</button></div>
+        <div class="gen-row"><select id="chordStyle" aria-label="和音の鳴らし方"><option value="arp16">16分アルペジオ (ピコピコ)</option><option value="arp8">8分アルペジオ</option><option value="triad">のばす和音 (ハモリ・ベース枠も使う)</option></select><button id="genChord" type="button">和音を作る</button></div>
+        <div class="gen-row"><select id="bassStyle" aria-label="ベースの刻み方"><option value="octave">8分でオクターブ</option><option value="beat">4分で刻む</option><option value="fifth">根音と5度を交互</option><option value="hold">根音をのばす</option></select><button id="genBass" type="button">ベースを作る</button></div>
+        <div class="row"><button id="genAll" class="primary" type="button">まとめて作る</button></div>
+      </div>
+    </section>
+
+    <!-- 書き出し -->
+    <section class="export panel" aria-label="書き出し">
+      <h2>ポケステ用に書き出す</h2>
+      <div class="fields">
+        <div class="field" style="grid-column: 1 / -1"><label for="title">タイトル (メモリーカード画面に表示)</label><input id="title" type="text" maxlength="32" value="ドット絵アニメ"></div>
+        <div class="field" style="grid-column: 1 / -1"><label for="saveid">セーブのファイル名 (英数字8文字まで)</label>
+          <div class="idrow"><code>BISLPSP00000</code><input id="saveid" type="text" maxlength="8" value="ANIME" autocapitalize="characters" spellcheck="false"></div></div>
+      </div>
+      <div class="meter">
+        <div class="bar" id="bar" aria-hidden="true"></div>
+        <p id="meterText">1 / 15 ブロック使用</p>
+      </div>
+      <div class="row">
+        <button id="saveZip" class="primary" type="button">ポケステ用データ一式 (.zip)</button>
+        <button id="savePng" type="button">コマ一覧の画像 (.png)</button>
+      </div>
+      <div class="row">
+        <button id="saveProj" type="button">作品を保存 (.json)</button>
+        <label class="btn" for="openProj">作品を開く<input id="openProj" type="file" accept=".json,application/json"></label>
+      </div>
+      <p class="note" id="saveNote"></p>
+      <ul class="files">
+        <li><code>anime.mcr</code><span>メモリーカード丸ごと(128KB)。エミュレータやカード書き込みソフトで開く</span></li>
+        <li><code>anime.mcs</code><span>セーブ1件分。今あるカードに追加するとき</span></li>
+        <li><code>anime.bin</code><span>ポケステ実行ファイルそのもの</span></li>
+        <li><code>anime.pda</code><span>ドット絵データ。PCで再ビルドするとき <code>make FRAMES=anime.pda</code></span></li>
+        <li><code>song.pmu</code><span>曲データ。PCで再ビルドするとき <code>MUSIC=song.pmu</code></span></li>
+        <li><code>project.json</code><span>作品ファイル。「作品を開く」で続きを編集できます</span></li>
+        <li><code>frames.png</code><span>全コマを横に並べた画像 (1倍)</span></li>
+      </ul>
+    </section>
+
+    <!-- 使い方 -->
+    <section class="help panel" aria-label="使い方">
+      <h2>ポケステでの動かし方</h2>
+      <details open>
+        <summary>本体の操作</summary>
+        <dl class="keys">
+          <dt>決定 (短押し)</dt><dd>一時停止 / 再開</dd>
+          <dt>決定 (2秒長押し)</dt><dd>時計画面に戻る</dd>
+          <dt>右 / 左</dt><dd>アニメを速く / 遅く</dd>
+          <dt>上</dt><dd>白黒反転</dd>
+          <dt>下</dt><dd>再生中は曲を鳴らす / 止める、一時停止中は1コマ送り</dd>
+        </dl>
+      </details>
+      <details>
+        <summary>実機に入れる手順</summary>
+        <ol>
+          <li>「ポケステ用データ一式」を保存して、PCでzipを開きます。</li>
+          <li>まずエミュレータ (no$psx など) で <code>anime.mcr</code> を読み込み、動きを確認します。</li>
+          <li>メモリーカード管理ソフト (MemcardRex など) とカードアダプタ (MemCARDuino、PS3用メモリーカードアダプタなど) で、<code>anime.mcs</code> をポケステに書き込みます。PS本体のメモリーカード画面でコピーする方法もあります。</li>
+          <li>ポケステの時計画面で左右ボタンを押すとアイコンが出るので、決定ボタンで起動します。</li>
+        </ol>
+      </details>
+      <details>
+        <summary>容量とヒント</summary>
+        <ul>
+          <li>1コマは128バイト。1ブロック(8KB)に約60コマ、最大15ブロックです。</li>
+          <li>白黒2色なので、輪郭がはっきりした絵ほどきれいに出ます。写真は「Atkinson」か「網点」が向いています。</li>
+          <li>曲は 16分音符1つで16バイト。4小節で約1KBです。</li>
+          <li>ポケステの時計画面で音量を「消音」にしていると、起動しても鳴りません。下ボタンで鳴らせます。「小」にしていると小さく鳴ります。</li>
+          <li>PS本体に挿している間は通信の処理が優先されるので、音がとぎれることがあります。</li>
+          <li>描いたコマと曲はこの端末のブラウザに自動で保存されます。別の端末に移すときは「作品を保存」を使ってください。</li>
+        </ul>
+      </details>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ============================================================
+ * 共通データ
+ * ============================================================ */
+const N = 32;
+const PLAYER_B64 = "__PLAYER_B64__";
+const STORE_KEY = "poc-dot-studio-v1";
+
+const state = {
+  frames: [],           // Uint8Array(1024), 1=黒
+  cur: 0,
+  delay: 4,             // 1コマ = delay/30 秒
+  playing: true,
+  invPrev: false,
+  tool: "pen",
+  onion: true,
+  isSample: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const blank = () => new Uint8Array(N * N);
+
+/* ---------- PocketStation 形式との相互変換 ---------- */
+function frameToWords(f) {
+  const w = new Uint32Array(N);
+  for (let y = 0; y < N; y++) {
+    let v = 0;
+    for (let x = 0; x < N; x++) if (f[y * N + x]) v |= (1 << x);
+    w[y] = v >>> 0;
+  }
+  return w;
+}
+function wordsToFrame(w) {
+  const f = blank();
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) f[y * N + x] = (w[y] >>> x) & 1;
+  return f;
+}
+
+/* ---------- サンプル: 弾むボール (tools/mkpoc.py と同じ絵) ---------- */
+function sampleFrames() {
+  const out = [];
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const h = Math.abs(Math.sin(Math.PI * t));
+    const cy = 25 - h * 16;
+    const squash = h > 0.15 ? 1.0 : 0.8 + h;
+    const rx = 5 / Math.sqrt(squash), ry = 5 * squash;
+    const shadowW = 3 + (1 - h) * 4;
+    const f = blank();
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = (x + 0.5 - 16) / rx, dy = (y + 0.5 - cy) / ry;
+      if (dx * dx + dy * dy <= 1) {
+        const hx = (x + 0.5 - (16 - rx * 0.4)) / 1.6, hy = (y + 0.5 - (cy - ry * 0.4)) / 1.6;
+        f[y * N + x] = hx * hx + hy * hy < 1 ? 0 : 1;
+      }
+      if (y === 30 && Math.abs(x + 0.5 - 16) < shadowW) f[y * N + x] = 1;
+      if (y === 31) f[y * N + x] = x % 2 === 0 ? 1 : 0;
+    }
+    out.push(f);
+  }
+  return out;
+}
+
+/* ============================================================
+ * 書き出し: SCヘッダ付き実行ファイル / .mcs / .mcr / .pda / zip
+ * (tools/mkpoc.py と同じバイト列を作る)
+ * ============================================================ */
+const BASE = 0x02000000, HEADER_SIZE = 0x180, BLOCK = 0x2000, MAX_BLOCKS = 15;
+
+function b64ToBytes(b64) {
+  const s = atob(b64); const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+
+let sjisMap = null;
+function buildSjisMap() {
+  sjisMap = new Map();
+  let dec;
+  try { dec = new TextDecoder("shift_jis", { fatal: true }); } catch (e) { return; }
+  const leads = [];
+  for (let a = 0x81; a <= 0x9F; a++) leads.push(a);
+  for (let a = 0xE0; a <= 0xFC; a++) leads.push(a);
+  const pair = new Uint8Array(2);
+  for (const a of leads) for (let b = 0x40; b <= 0xFC; b++) {
+    if (b === 0x7F) continue;
+    pair[0] = a; pair[1] = b;
+    try {
+      const ch = dec.decode(pair);
+      if (ch.length === 1 && !sjisMap.has(ch)) sjisMap.set(ch, [a, b]);
+    } catch (e) { /* 未定義コード */ }
+  }
+}
+function sjisTitle(text) {
+  if (!sjisMap) buildSjisMap();
+  const out = [];
+  for (const ch0 of text) {
+    let ch = ch0;
+    if (ch === " ") ch = "　";
+    else if (ch >= "!" && ch <= "~") ch = String.fromCharCode(ch.charCodeAt(0) + 0xFEE0);
+    let bytes;
+    if (ch.charCodeAt(0) < 0x80) bytes = [ch.charCodeAt(0)];
+    else bytes = sjisMap.get(ch) || [0x3F];
+    if (out.length + bytes.length > 64) break;
+    out.push(...bytes);
+  }
+  const r = new Uint8Array(64); r.set(out); return r;
+}
+
+function colorIcon(words) {
+  const out = new Uint8Array(0x80);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    let black = 0;
+    for (const sy of [0, 1]) black |= (words[y * 2 + sy] >>> (x * 2)) & 3;
+    out[y * 8 + (x >> 1)] |= (black ? 1 : 0) << (4 * (x & 1));
+  }
+  return out;
+}
+
+function buildPocFile(frames, delay, title, music = null) {
+  const player = b64ToBytes(PLAYER_B64);
+  const magic = String.fromCharCode(...player.slice(0, 4));
+  if (magic !== "PANM") throw new Error("再生プログラムが壊れています");
+  const pad4 = (n) => n + ((4 - n % 4) % 4);
+  const body = new Uint8Array(pad4(player.length)); body.set(player);
+  const bv = new DataView(body.buffer);
+  const entry = bv.getUint32(4, true);
+  const count = frames.length;
+  delay = Math.max(1, Math.min(30, delay | 0));
+  const framesAddr = BASE + HEADER_SIZE + body.length;
+  const musicAddr = music ? framesAddr + count * 128 : 0;
+  bv.setUint32(8, framesAddr, true); bv.setUint32(12, count, true); bv.setUint32(16, delay, true);
+  bv.setUint32(20, musicAddr, true);
+
+  const words = frames.map(frameToWords);
+  const raw = HEADER_SIZE + body.length + count * 128 + (music ? music.length : 0);
+  const blocks = Math.ceil(raw / BLOCK);
+  if (blocks > MAX_BLOCKS) throw new Error(`大きすぎます (${blocks}ブロック)。コマか曲の長さを減らしてください`);
+  const data = new Uint8Array(blocks * BLOCK);
+  const dv = new DataView(data.buffer);
+  data[0] = 0x53; data[1] = 0x43;           // "SC"
+  data[2] = 0x11; data[3] = 0x01;
+  data.set(sjisTitle(title), 4);
+  dv.setUint16(0x50, 0, true);
+  data.set([0x4D, 0x43, 0x58, 0x30], 0x52);  // "MCX0"
+  data[0x56] = 1; data[0x57] = 0;
+  dv.setUint32(0x5C, entry, true);
+  dv.setUint16(0x60, 0x7FFF, true); dv.setUint16(0x62, 0x8000, true);
+  data.set(colorIcon(words[0]), 0x80);
+  dv.setUint16(0x100, count, true); dv.setUint16(0x102, delay, true); dv.setUint32(0x104, framesAddr, true);
+  data.set(body, HEADER_SIZE);
+  let o = HEADER_SIZE + body.length;
+  for (const w of words) { for (let y = 0; y < N; y++) dv.setUint32(o + y * 4, w[y], true); o += 128; }
+  if (music) data.set(music, o);
+  return { data, blocks };
+}
+
+function xorSum(f) { let c = 0; for (let i = 0; i < 0x7F; i++) c ^= f[i]; return c; }
+function dirFrame(st, size = 0, nxt = 0xFFFF, name = "") {
+  const f = new Uint8Array(0x80); const v = new DataView(f.buffer);
+  v.setUint32(0, st, true); v.setUint32(4, size, true); v.setUint16(8, nxt, true);
+  for (let i = 0; i < name.length; i++) f[0x0A + i] = name.charCodeAt(i);
+  f[0x7F] = xorSum(f); return f;
+}
+function buildMcs(file, blocks, name) {
+  const out = new Uint8Array(0x80 + file.length);
+  out.set(dirFrame(0x51, blocks * BLOCK, 0xFFFF, name)); out.set(file, 0x80); return out;
+}
+function buildMcr(file, blocks, name) {
+  const card = new Uint8Array(16 * BLOCK).fill(0xFF);
+  const head = new Uint8Array(0x80); head[0] = 0x4D; head[1] = 0x43; head[0x7F] = xorSum(head);
+  card.set(head, 0);
+  for (let i = 1; i < 16; i++) {
+    let fr;
+    if (i <= blocks) {
+      const st = blocks === 1 ? 0x51 : (i === 1 ? 0x51 : (i === blocks ? 0x53 : 0x52));
+      fr = dirFrame(st, i === 1 ? blocks * BLOCK : 0, i < blocks ? i : 0xFFFF, i === 1 ? name : "");
+    } else fr = dirFrame(0xA0);
+    card.set(fr, i * 0x80);
+  }
+  for (let i = 16; i < 36; i++) {
+    const f = new Uint8Array(0x80); new DataView(f.buffer).setUint32(0, 0xFFFFFFFF, true); f[0x7F] = xorSum(f);
+    card.set(f, i * 0x80);
+  }
+  card.set(head, 63 * 0x80);
+  card.set(file, BLOCK);
+  card.fill(0, BLOCK + file.length);
+  return card;
+}
+function buildPda(frames, delay) {
+  const out = new Uint8Array(16 + frames.length * 128); const v = new DataView(out.buffer);
+  out.set([0x50, 0x44, 0x41, 0x31]); v.setUint32(4, frames.length, true); v.setUint32(8, delay, true);
+  frames.forEach((f, i) => { const w = frameToWords(f); for (let y = 0; y < N; y++) v.setUint32(16 + i * 128 + y * 4, w[y], true); });
+  return out;
+}
+function saveName(id) {
+  const clean = (id || "").toUpperCase().replace(/[^A-Z0-9_]/g, "").slice(0, 8);
+  return "BISLPSP00000" + (clean || "ANIME");
+}
+
+/* ---- 無圧縮 zip ---- */
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_TABLE[(c ^ u[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder();
+  const parts = [], central = []; let offset = 0;
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nm = enc.encode(name), crc = crc32(data);
+    const lh = new Uint8Array(30 + nm.length); const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+    lv.setUint16(26, nm.length, true); lh.set(nm, 30);
+    const ch = new Uint8Array(46 + nm.length); const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
+    cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nm.length, true); cv.setUint32(42, offset, true); ch.set(nm, 46);
+    parts.push(lh, data); central.push(ch); offset += lh.length + data.length;
+  }
+  const csize = central.reduce((a, c) => a + c.length, 0);
+  const end = new Uint8Array(22); const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, entries.length, true); ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, csize, true); ev.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: "application/zip" });
+}
+
+/* ============================================================
+ * 画像 → 32×32 白黒
+ * ============================================================ */
+let sources = [];   // {canvas, sx, sy, sw, sh}
+let converted = []; // Uint8Array[]
+let suggestedDelay = null;
+
+function downscale(src, sx, sy, sw, sh, tw, th) {
+  // 半分ずつ縮めて、32px への一発縮小で細部が欠けるのを防ぐ
+  let c = document.createElement("canvas");
+  let w = sw, h = sh;
+  c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
+  let g = c.getContext("2d");
+  g.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  while (w / 2 >= tw && h / 2 >= th) {
+    w /= 2; h /= 2;
+    const n = document.createElement("canvas");
+    n.width = Math.max(1, Math.round(w)); n.height = Math.max(1, Math.round(h));
+    const ng = n.getContext("2d"); ng.imageSmoothingQuality = "high";
+    ng.drawImage(c, 0, 0, n.width, n.height);
+    c = n;
+  }
+  return c;
+}
+
+function readSettings() {
+  return {
+    fit: $("fit").value, dither: $("dither").value,
+    zoom: +$("zoom").value / 100, thr: +$("thr").value,
+    offx: +$("offx").value / 100, offy: +$("offy").value / 100,
+    bri: +$("bri").value, con: +$("con").value,
+    bg: $("bg").value, inv: $("inv").checked,
+  };
+}
+
+function convertOne(srcInfo, s) {
+  const { canvas: img, sx, sy, sw, sh } = srcInfo;
+  let dw, dh;
+  if (s.fit === "stretch") { dw = N * s.zoom; dh = N * s.zoom; }
+  else {
+    const k = (s.fit === "cover" ? Math.max(N / sw, N / sh) : Math.min(N / sw, N / sh)) * s.zoom;
+    dw = sw * k; dh = sh * k;
+  }
+  const dx = (N - dw) / 2 + s.offx * N, dy = (N - dh) / 2 + s.offy * N;
+  const small = downscale(img, sx, sy, sw, sh, Math.max(1, Math.ceil(dw)), Math.max(1, Math.ceil(dh)));
+  const c = document.createElement("canvas"); c.width = N; c.height = N;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.fillStyle = s.bg === "black" ? "#000" : "#fff"; g.fillRect(0, 0, N, N);
+  g.imageSmoothingQuality = "high";
+  g.drawImage(small, dx, dy, dw, dh);
+  const px = g.getImageData(0, 0, N, N).data;
+  const L = new Float32Array(N * N);
+  const cc = s.con * 2.55, cf = (259 * (cc + 255)) / (255 * (259 - cc));
+  for (let i = 0; i < N * N; i++) {
+    const l = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+    L[i] = cf * (l - 128) + 128 + s.bri * 1.28;
+  }
+  return dither(L, s);
+}
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function dither(L, s) {
+  const out = blank(), t = s.thr;
+  const spread = (_, x, y, e, w) => { if (x >= 0 && x < N && y < N) L[y * N + x] += e * w; };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = y * N + x, v = L[i];
+    let black;
+    if (s.dither === "bayer") black = v < t + ((BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * 255 * 0.9;
+    else black = v < t;
+    out[i] = black ? 1 : 0;
+    if (s.dither === "fs" || s.dither === "atkinson") {
+      const e = v - (black ? 0 : 255);
+      if (s.dither === "fs") {
+        spread(i, x + 1, y, e, 7 / 16); spread(i, x - 1, y + 1, e, 3 / 16);
+        spread(i, x, y + 1, e, 5 / 16); spread(i, x + 1, y + 1, e, 1 / 16);
+      } else {
+        const w = 1 / 8;
+        spread(i, x + 1, y, e, w); spread(i, x + 2, y, e, w);
+        spread(i, x - 1, y + 1, e, w); spread(i, x, y + 1, e, w); spread(i, x + 1, y + 1, e, w);
+        spread(i, x, y + 2, e, w);
+      }
+    }
+  }
+  if (s.inv) for (let i = 0; i < out.length; i++) out[i] ^= 1;
+  return out;
+}
+
+function splitSources(list) {
+  const cols = Math.max(1, Math.min(32, +$("cols").value || 1));
+  const rows = Math.max(1, Math.min(32, +$("rows").value || 1));
+  const out = [];
+  for (const c of list) {
+    const cw = c.width / cols, ch = c.height / rows;
+    for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) out.push({ canvas: c, sx: k * cw, sy: r * ch, sw: cw, sh: ch });
+  }
+  return out;
+}
+
+let rawSources = [];
+function reconvert() {
+  sources = splitSources(rawSources);
+  const s = readSettings();
+  converted = sources.map((src) => convertOne(src, s));
+  const box = $("convPreview");
+  box.textContent = "";
+  if (!converted.length) {
+    const e = document.createElement("div"); e.className = "empty"; e.style.flex = "1";
+    e.textContent = "画像を選ぶと、ここに 32×32 白黒の変換結果が並びます。スライダーを動かすとすぐ反映されます。";
+    box.append(e);
+  }
+  for (const f of converted.slice(0, 60)) {
+    const c = document.createElement("canvas"); c.width = N; c.height = N; drawThumb(c, f); box.append(c);
+  }
+  if (converted.length > 60) { const s2 = document.createElement("span"); s2.className = "note"; s2.textContent = `ほか ${converted.length - 60} コマ`; box.append(s2); }
+  $("addFrames").disabled = $("replaceFrames").disabled = !converted.length;
+  $("addFrames").textContent = converted.length ? `${converted.length}コマを末尾に追加` : "コマを末尾に追加";
+}
+
+function toCanvas(img, w, h) {
+  const max = 1024; const k = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+async function loadFiles(files) {
+  const list = []; let gifNote = ""; suggestedDelay = null;
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    try {
+      if (file.type === "image/gif" && "ImageDecoder" in window) {
+        const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type });
+        await dec.tracks.ready;
+        const n = Math.min(dec.tracks.selectedTrack.frameCount, 240);
+        let dur = 0;
+        for (let i = 0; i < n; i++) {
+          const { image } = await dec.decode({ frameIndex: i });
+          dur += image.duration || 0;
+          list.push(toCanvas(image, image.displayWidth, image.displayHeight));
+          image.close();
+        }
+        if (n > 1 && dur > 0) suggestedDelay = Math.max(1, Math.min(30, Math.round((dur / n) / 1e6 * 30)));
+      } else {
+        if (file.type === "image/gif" && !gifNote) gifNote = "この端末ではGIFの1コマ目だけ読み込みます。";
+        const bmp = await createImageBitmap(file);
+        list.push(toCanvas(bmp, bmp.width, bmp.height));
+        bmp.close && bmp.close();
+      }
+    } catch (e) {
+      toast(`${file.name} を読み込めませんでした`);
+    }
+  }
+  rawSources = list;
+  $("srcInfo").textContent = list.length ? `${list.length}枚読み込み。${gifNote}` + (suggestedDelay ? `GIFの速さ ≒ 1コマ ${suggestedDelay}/30秒` : "") : "画像を読み込めませんでした";
+  reconvert();
+}
+
+/* ============================================================
+ * 描画
+ * ============================================================ */
+const css = getComputedStyle(document.documentElement);
+const LCD = css.getPropertyValue("--lcd").trim() || "#b7c0b2";
+const LCD_INK = css.getPropertyValue("--lcd-ink").trim() || "#1a211c";
+
+function drawThumb(canvas, f) {
+  const g = canvas.getContext("2d");
+  const img = g.createImageData(N, N);
+  const bg = hexRgb(LCD), fg = hexRgb(LCD_INK);
+  for (let i = 0; i < N * N; i++) {
+    const c = f[i] ? fg : bg;
+    img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+function hexRgb(h) { const m = h.replace("#", ""); return [0, 2, 4].map((i) => parseInt(m.slice(i, i + 2), 16)); }
+
+function drawLcd(f) {
+  const c = $("lcd"), g = c.getContext("2d"), cell = c.width / N;
+  g.fillStyle = LCD; g.fillRect(0, 0, c.width, c.height);
+  // 液晶の消えているドットもうっすら見せる
+  g.fillStyle = "rgba(26,33,28,0.06)";
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) g.fillRect(x * cell + 1, y * cell + 1, cell - 1, cell - 1);
+  g.fillStyle = LCD_INK;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (f[y * N + x] ^ (state.invPrev ? 1 : 0)) g.fillRect(x * cell + 1, y * cell + 1, cell - 1, cell - 1);
+  }
+}
+
+function drawEditor() {
+  const c = $("ed"), g = c.getContext("2d"), cell = c.width / N;
+  const f = state.frames[state.cur], prev = state.frames[state.cur - 1];
+  g.fillStyle = LCD; g.fillRect(0, 0, c.width, c.height);
+  if (state.onion && prev) {
+    g.fillStyle = "rgba(26,33,28,0.18)";
+    for (let i = 0; i < N * N; i++) if (prev[i] && !f[i]) g.fillRect((i % N) * cell, ((i / N) | 0) * cell, cell, cell);
+  }
+  g.fillStyle = LCD_INK;
+  for (let i = 0; i < N * N; i++) if (f[i]) g.fillRect((i % N) * cell, ((i / N) | 0) * cell, cell, cell);
+  // 方眼 (8ドットごとに濃く: BIOSの文字も8×8)
+  for (let k = 1; k < N; k++) {
+    g.fillStyle = k % 8 === 0 ? "rgba(26,33,28,0.35)" : "rgba(26,33,28,0.12)";
+    g.fillRect(k * cell, 0, 1, c.height); g.fillRect(0, k * cell, c.width, 1);
+  }
+  $("edLabel").textContent = `コマ ${state.cur + 1} / ${state.frames.length}`;
+}
+
+function renderStrip() {
+  const strip = $("strip"); strip.textContent = "";
+  state.frames.forEach((f, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "thumb" + (i === state.cur ? " sel" : "");
+    b.setAttribute("role", "option"); b.setAttribute("aria-selected", i === state.cur);
+    b.setAttribute("aria-label", `コマ ${i + 1}`);
+    const c = document.createElement("canvas"); c.width = N; c.height = N; drawThumb(c, f);
+    const s = document.createElement("span"); s.textContent = i + 1;
+    b.append(c, s);
+    b.addEventListener("click", () => { state.cur = i; renderAll(); });
+    strip.append(b);
+  });
+  const sel = strip.children[state.cur];
+  if (sel) sel.scrollIntoView({ block: "nearest", inline: "nearest" });
+  $("fDel").disabled = state.frames.length <= 1;
+  $("fLeft").disabled = state.cur === 0;
+  $("fRight").disabled = state.cur >= state.frames.length - 1;
+}
+
+function updateThumb(i) {
+  const b = $("strip").children[i];
+  if (b) drawThumb(b.querySelector("canvas"), state.frames[i]);
+}
+
+function renderSpeed() {
+  const fps = 30 / state.delay;
+  $("speedOut").textContent = `1コマ ${state.delay}/30秒`;
+  $("fps").textContent = `${fps % 1 ? fps.toFixed(1) : fps} fps`;
+  $("slower").disabled = state.delay >= 30;
+  $("faster").disabled = state.delay <= 1;
+}
+
+function renderMeter() {
+  let text, blocks = 0;
+  try {
+    const playerLen = Math.ceil(b64ToBytes(PLAYER_B64).length / 4) * 4;
+    const musicLen = songHasNotes() ? 32 + totalSteps() * 16 : 0;
+    const used = HEADER_SIZE + playerLen + state.frames.length * 128 + musicLen;
+    blocks = Math.ceil(used / BLOCK);
+    const left = MAX_BLOCKS * BLOCK - used;
+    const parts = `コマ ${(state.frames.length * 128 / 1024).toFixed(1)}KB` + (musicLen ? ` ・ 曲 ${(musicLen / 1024).toFixed(1)}KB` : " ・ 曲なし");
+    text = blocks <= MAX_BLOCKS
+      ? `${blocks} / 15 ブロック使用 (${parts}) ・ あと ${Math.floor(left / 128)} コマ入ります`
+      : `${blocks} ブロック必要で、上限の15ブロックを超えています。コマか曲の長さを減らしてください`;
+  } catch (e) { text = ""; }
+  const bar = $("bar"); bar.textContent = "";
+  for (let i = 0; i < 15; i++) { const s = document.createElement("i"); if (i < blocks) s.className = "used"; bar.append(s); }
+  $("meterText").textContent = text;
+  $("saveZip").disabled = blocks > MAX_BLOCKS;
+}
+
+function renderAll() {
+  state.cur = Math.max(0, Math.min(state.cur, state.frames.length - 1));
+  renderStrip(); drawEditor(); renderSpeed(); renderMeter();
+  $("sampleTag").hidden = !state.isSample;
+  needLcd = true;
+}
+
+/* ============================================================
+ * 再生 (30Hz)
+ * ============================================================ */
+let playIdx = 0, tickWait = 0, lastT = 0, acc = 0;
+function loop(t) {
+  if (!lastT) lastT = t;
+  acc += Math.min(200, t - lastT); lastT = t;
+  let changed = false;
+  while (acc >= 1000 / 30) {
+    acc -= 1000 / 30;
+    if (state.playing && state.frames.length) {
+      if (++tickWait >= state.delay) { tickWait = 0; playIdx = (playIdx + 1) % state.frames.length; changed = true; }
+    }
+  }
+  if (changed || needLcd) paintLcd();
+  tickMusicUi();
+  requestAnimationFrame(loop);
+}
+let needLcd = true;
+function paintLcd() {
+  needLcd = false;
+  if (playIdx >= state.frames.length) playIdx = 0;
+  const shown = state.playing ? playIdx : state.cur;
+  drawLcd(state.frames[shown] || blank());
+  $("count").textContent = `${shown + 1} / ${state.frames.length}`;
+  $("led").classList.toggle("on", state.playing);
+  const strip = $("strip");
+  for (let i = 0; i < strip.children.length; i++) strip.children[i].classList.toggle("playing", state.playing && i === shown);
+}
+
+/* ============================================================
+ * 編集
+ * ============================================================ */
+const undoStack = [];
+function pushUndo() {
+  undoStack.push({ frames: state.frames.map((f) => f.slice()), cur: state.cur });
+  if (undoStack.length > 40) undoStack.shift();
+  $("undo").disabled = false;
+}
+function changed() { state.isSample = false; $("sampleTag").hidden = true; needLcd = true; saveDraft(); }
+
+function cellAt(ev) {
+  const r = $("ed").getBoundingClientRect();
+  const x = Math.floor(((ev.clientX - r.left) / r.width) * N);
+  const y = Math.floor(((ev.clientY - r.top) / r.height) * N);
+  return [Math.max(0, Math.min(N - 1, x)), Math.max(0, Math.min(N - 1, y))];
+}
+let painting = null;
+$("ed").addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  $("ed").setPointerCapture(ev.pointerId);
+  const [x, y] = cellAt(ev);
+  const f = state.frames[state.cur];
+  pushUndo();
+  const value = state.tool === "pen" ? 1 : state.tool === "erase" ? 0 : f[y * N + x] ^ 1;
+  painting = { value, x, y };
+  f[y * N + x] = value; drawEditor();
+});
+$("ed").addEventListener("pointermove", (ev) => {
+  if (!painting) return;
+  const [x, y] = cellAt(ev);
+  const f = state.frames[state.cur];
+  // 速くなぞっても線がとぎれないように前の点からつなぐ
+  let x0 = painting.x, y0 = painting.y;
+  const dx = Math.abs(x - x0), dy = -Math.abs(y - y0), sx = x0 < x ? 1 : -1, sy = y0 < y ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    f[y0 * N + x0] = painting.value;
+    if (x0 === x && y0 === y) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+  painting.x = x; painting.y = y; drawEditor();
+});
+const endPaint = () => { if (painting) { painting = null; updateThumb(state.cur); changed(); } };
+$("ed").addEventListener("pointerup", endPaint);
+$("ed").addEventListener("pointercancel", endPaint);
+
+function setTool(t) {
+  state.tool = t;
+  $("tPen").setAttribute("aria-pressed", t === "pen");
+  $("tErase").setAttribute("aria-pressed", t === "erase");
+  $("tFlip").setAttribute("aria-pressed", t === "flip");
+}
+$("tPen").onclick = () => setTool("pen");
+$("tErase").onclick = () => setTool("erase");
+$("tFlip").onclick = () => setTool("flip");
+$("tOnion").onclick = () => { state.onion = !state.onion; $("tOnion").setAttribute("aria-pressed", state.onion); drawEditor(); };
+
+function editFrame(fn) { pushUndo(); state.frames[state.cur] = fn(state.frames[state.cur]); drawEditor(); updateThumb(state.cur); changed(); }
+$("eClear").onclick = () => editFrame(() => blank());
+$("eInv").onclick = () => editFrame((f) => f.map((v) => v ^ 1));
+$("eMirror").onclick = () => editFrame((f) => { const o = blank(); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) o[y * N + x] = f[y * N + (N - 1 - x)]; return o; });
+function shift(dx, dy) { editFrame((f) => { const o = blank(); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) o[((y + dy + N) % N) * N + ((x + dx + N) % N)] = f[y * N + x]; return o; }); }
+$("sL").onclick = () => shift(-1, 0); $("sR").onclick = () => shift(1, 0);
+$("sU").onclick = () => shift(0, -1); $("sD").onclick = () => shift(0, 1);
+$("undo").onclick = () => {
+  const u = undoStack.pop(); if (!u) return;
+  state.frames = u.frames; state.cur = u.cur; renderAll(); changed();
+  $("undo").disabled = !undoStack.length;
+};
+
+/* コマ操作 */
+$("fAdd").onclick = () => { pushUndo(); state.frames.splice(state.cur + 1, 0, blank()); state.cur++; renderAll(); changed(); };
+$("fDup").onclick = () => { pushUndo(); state.frames.splice(state.cur + 1, 0, state.frames[state.cur].slice()); state.cur++; renderAll(); changed(); };
+$("fDel").onclick = () => { if (state.frames.length <= 1) return; pushUndo(); state.frames.splice(state.cur, 1); renderAll(); changed(); };
+function move(d) {
+  const j = state.cur + d; if (j < 0 || j >= state.frames.length) return;
+  pushUndo(); const a = state.frames; [a[state.cur], a[j]] = [a[j], a[state.cur]]; state.cur = j; renderAll(); changed();
+}
+$("fLeft").onclick = () => move(-1); $("fRight").onclick = () => move(1);
+
+/* 再生操作 */
+$("play").onclick = () => {
+  state.playing = !state.playing;
+  $("play").textContent = state.playing ? "一時停止" : "再生";
+  if (state.playing) { playIdx = state.cur; tickWait = 0; }
+  if ($("sndPrev").getAttribute("aria-pressed") === "true") {
+    if (state.playing) { playIdx = 0; tickWait = 0; startMusic(0, "preview"); }
+    else if (musicFrom === "preview") stopMusic();
+  }
+  needLcd = true;
+};
+$("faster").onclick = () => { state.delay = Math.max(1, state.delay - 1); renderSpeed(); saveDraft(); };
+$("slower").onclick = () => { state.delay = Math.min(30, state.delay + 1); renderSpeed(); saveDraft(); };
+$("invPrev").onclick = () => { state.invPrev = !state.invPrev; $("invPrev").setAttribute("aria-pressed", state.invPrev); needLcd = true; };
+
+/* 変換 */
+$("file").addEventListener("change", (e) => { if (e.target.files.length) loadFiles([...e.target.files]); e.target.value = ""; });
+const panel = $("importPanel");
+panel.addEventListener("dragover", (e) => { e.preventDefault(); panel.classList.add("over"); });
+panel.addEventListener("dragleave", () => panel.classList.remove("over"));
+panel.addEventListener("drop", (e) => { e.preventDefault(); panel.classList.remove("over"); if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]); });
+document.addEventListener("paste", (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) loadFiles(fs); });
+
+const sliders = { zoom: (v) => v + "%", thr: (v) => v, offx: (v) => v, offy: (v) => v, bri: (v) => v, con: (v) => v };
+let convTimer = 0;
+const scheduleConvert = () => { clearTimeout(convTimer); convTimer = setTimeout(reconvert, 40); };
+for (const [id, fmt] of Object.entries(sliders)) {
+  $(id).addEventListener("input", () => { $(id + "Out").textContent = fmt($(id).value); scheduleConvert(); });
+}
+for (const id of ["fit", "dither", "bg", "inv", "cols", "rows"]) $(id).addEventListener("change", scheduleConvert);
+
+function takeConverted(replace) {
+  if (!converted.length) return;
+  pushUndo();
+  const add = converted.map((f) => f.slice());
+  if (replace) { state.frames = add; state.cur = 0; }
+  else { state.frames.push(...add); state.cur = state.frames.length - add.length; }
+  if (suggestedDelay) state.delay = suggestedDelay;
+  playIdx = state.cur; tickWait = 0;
+  renderAll(); changed();
+  toast(`${add.length}コマを${replace ? "置き換えました" : "追加しました"}`);
+}
+$("addFrames").onclick = () => takeConverted(false);
+$("replaceFrames").onclick = () => takeConverted(true);
+
+/* ============================================================
+ * 作曲: 矩形波4音 (ポケステの src/sound.S と同じ計算)
+ * ============================================================ */
+const SND_RATE = 7808, HOLD = 0xFFFFFFFF, SPB = 4;   // 1拍 = 4ステップ (16分音符)
+const NOTE_JA = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"];
+const KEY_NAMES = ["C (ハ)", "C# (嬰ハ)", "D (ニ)", "E♭ (変ホ)", "E (ホ)", "F (ヘ)", "F# (嬰ヘ)", "G (ト)", "A♭ (変イ)", "A (イ)", "B♭ (変ロ)", "B (ロ)"];
+const TRACK_DEF = [
+  { name: "メロディ", duty: 128, vol: 13, oct: 5, low: 64 },
+  { name: "ハモリ", duty: 64, vol: 8, oct: 5, low: 55 },
+  { name: "和音", duty: 32, vol: 6, oct: 4, low: 55 },
+  { name: "ベース", duty: 128, vol: 11, oct: 3, low: 43 },
+];
+const ROWS = 25, CELL_W = 22, CELL_H = 16, KEYS_W = 46;
+const LEN_STEPS = { 1: 16, 2: 8, 4: 4, 8: 2, 16: 1 };
+
+function newSong() {
+  return {
+    bpm: 120, bars: 4, key: 0, minor: false, chords: "", isSample: false,
+    tracks: TRACK_DEF.map((d) => ({ duty: d.duty, vol: d.vol, mute: false, notes: [], text: "", low: d.low })),
+  };
+}
+let song = newSong();
+let curTrack = 0, noteLen = 4;
+const totalSteps = () => song.bars * 16;
+
+const stepLen = (bpm) => Math.round(SND_RATE * 60 / (bpm * SPB));
+const gateLen = (sl) => sl - Math.max(1, Math.round(sl / 8));
+function noteInc(m) {
+  const f = 440 * Math.pow(2, (m - 69) / 12);
+  return Math.max(1, Math.min(0xFFFF, Math.round(f * 65536 / SND_RATE)));
+}
+const midiName = (m) => NOTE_JA[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+
+/* ---- 曲データ (PMUS) ---- */
+function compileSong(s = song) {
+  const steps = s.bars * 16, sl = stepLen(s.bpm);
+  const words = new Uint32Array(steps * 4);
+  s.tracks.forEach((tr, t) => {
+    if (tr.mute) return;
+    const amp = Math.min(127, tr.vol * 8);
+    for (const nt of tr.notes) {
+      if (nt.s >= steps) continue;
+      words[nt.s * 4 + t] = (noteInc(nt.n) | (tr.duty << 16) | (amp << 24)) >>> 0;
+      for (let k = nt.s + 1; k < Math.min(steps, nt.s + nt.l); k++) words[k * 4 + t] = HOLD;
+    }
+  });
+  const out = new Uint8Array(32 + steps * 16), v = new DataView(out.buffer);
+  out.set([0x50, 0x4D, 0x55, 0x53]);               // "PMUS"
+  v.setUint32(4, 1, true); v.setUint32(8, steps, true);
+  v.setUint32(12, sl, true); v.setUint32(16, gateLen(sl), true);
+  for (let i = 0; i < words.length; i++) v.setUint32(32 + i * 4, words[i], true);
+  return out;
+}
+const songHasNotes = (s = song) => s.tracks.some((t) => !t.mute && t.vol > 0 && t.notes.some((n) => n.s < s.bars * 16));
+
+/* sound.S の snd_fiq と同じ手順で n サンプル作る (値は ±511 の10bit) */
+function renderPmu(pmu, n) {
+  const v = new DataView(pmu.buffer, pmu.byteOffset, pmu.byteLength);
+  const steps = v.getUint32(8, true), sl = v.getUint32(12, true), gl = v.getUint32(16, true);
+  const W = new Uint32Array(steps * 4);
+  for (let i = 0; i < W.length; i++) W[i] = v.getUint32(32 + i * 4, true);
+  const voice = new Uint32Array(4), phase = new Uint32Array(4);
+  let ptr = 0, remain = steps, left = 1, gate = 0;
+  const out = new Int16Array(n);
+  for (let k = 0; k < n; k++) {
+    if (--left === 0) {
+      for (let i = 0; i < 4; i++) { const w = W[ptr * 4 + i]; if (w !== HOLD) voice[i] = w; }
+      ptr++;
+      if (--remain === 0) { ptr = 0; remain = steps; }
+      left = sl; gate = gl;
+    }
+    if (gate) {
+      if (--gate === 0) for (let i = 0; i < 4; i++) if (W[ptr * 4 + i] !== HOLD) voice[i] = 0;
+    }
+    let a = 0;
+    for (let i = 0; i < 4; i++) {
+      const w = voice[i];
+      phase[i] = phase[i] + (w << 16);
+      a += ((w & 0x00FF0000) > (phase[i] >>> 8)) ? (w >>> 24) : -(w >>> 24);
+    }
+    out[k] = a;
+  }
+  return out;
+}
+
+/* ---- 再生 (WebAudio) ---- */
+let actx = null, musicSrc = null, musicT0 = 0, musicLoop = 1, musicSL = 1, musicFrom = "";
+function audioCtx() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC();
+  }
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+function startMusic(offset = 0, from = "music") {
+  stopMusic(true);
+  const ctx = audioCtx();
+  if (!ctx) { toast("この端末のブラウザでは音を鳴らせません"); return false; }
+  if (!songHasNotes()) { toast("曲に音符がありません"); updateMusicUi(); return false; }
+  const pmu = compileSong();
+  const sl = stepLen(song.bpm), total = totalSteps() * sl;
+  const raw = renderPmu(pmu, total);
+  const sr = ctx.sampleRate, len = Math.ceil(total * sr / SND_RATE);
+  const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  for (let j = 0; j < len; j++) d[j] = raw[Math.min(total - 1, Math.floor(j * SND_RATE / sr))] / 512 * 0.85;
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = true; src.connect(ctx.destination);
+  musicLoop = total / SND_RATE; musicSL = sl; musicFrom = from;
+  const off = ((offset % musicLoop) + musicLoop) % musicLoop;
+  src.start(0, off);
+  musicT0 = ctx.currentTime - off;
+  musicSrc = src;
+  updateMusicUi();
+  return true;
+}
+function stopMusic(quiet) {
+  if (musicSrc) { try { musicSrc.stop(); } catch (e) { /* 停止済み */ } musicSrc = null; }
+  if (!quiet) updateMusicUi();
+}
+const musicPos = () => (actx && musicSrc ? (actx.currentTime - musicT0) % musicLoop : 0);
+let restartTimer = 0;
+function restartIfPlaying() {
+  if (!musicSrc) return;
+  clearTimeout(restartTimer);
+  const pos = musicPos(), from = musicFrom;
+  restartTimer = setTimeout(() => { if (musicSrc) startMusic(pos, from); }, 120);
+}
+function blip(m, duty) {
+  const ctx = audioCtx(); if (!ctx) return;
+  const sr = ctx.sampleRate, len = Math.floor(sr * 0.16), f = 440 * Math.pow(2, (m - 69) / 12);
+  const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  for (let j = 0; j < len; j++) {
+    const ph = (Math.floor(j * SND_RATE / sr) * f / SND_RATE) % 1;
+    d[j] = (ph < duty / 256 ? 0.22 : -0.22) * (j < len * 0.8 ? 1 : 0);
+  }
+  const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start();
+}
+
+/* ---- ドレミの読み書き ---- */
+const NAME_MAP = [["ファ", 5], ["ふぁ", 5], ["ド", 0], ["ど", 0], ["レ", 2], ["れ", 2], ["ミ", 4], ["み", 4],
+  ["ソ", 7], ["そ", 7], ["ラ", 9], ["ら", 9], ["シ", 11], ["し", 11],
+  ["C", 0], ["D", 2], ["E", 4], ["F", 5], ["G", 7], ["A", 9], ["B", 11]];
+
+function parseDoremi(text, baseOct) {
+  const t = text.normalize("NFKC");
+  const notes = [];
+  let i = 0, pos = 0, defLen = 4, oct = baseOct, last = null;
+  const fail = (msg) => ({ error: `${i + 1}文字目: ${msg}` });
+  function readLen() {
+    const m = /^(\d+)(\.?)/.exec(t.slice(i));
+    if (!m) return LEN_STEPS[defLen];
+    if (!LEN_STEPS[m[1]]) return null;
+    i += m[0].length;
+    let L = LEN_STEPS[m[1]];
+    if (m[2]) { if (L === 1) return null; L += L / 2; }
+    return L;
+  }
+  while (i < t.length) {
+    const ch = t[i];
+    let m;
+    if (/[\s|,、。]/.test(ch)) { i++; continue; }
+    if ((m = /^[Ll](\d+)/.exec(t.slice(i)))) {
+      if (!LEN_STEPS[m[1]]) return fail(`長さ L${m[1]} は使えません (1,2,4,8,16)`);
+      defLen = +m[1]; i += m[0].length; continue;
+    }
+    if ((m = /^[Oo](\d)/.exec(t.slice(i)))) { oct = +m[1]; i += 2; continue; }
+    if (ch === ">") { oct++; i++; continue; }
+    if (ch === "<") { oct--; i++; continue; }
+    if (/[ー\-~]/.test(ch)) {
+      if (!last) return fail("「ー」の前に音符がありません");
+      last.l += LEN_STEPS[defLen]; pos += LEN_STEPS[defLen]; i++; continue;
+    }
+    if (ch === "&") {
+      i++;
+      if (!last) return fail("「&」の前に音符がありません");
+      const L = readLen(); if (!L) return fail("長さが読めません");
+      last.l += L; pos += L; continue;
+    }
+    if ((m = /^(休|ウ|う|R|r|・|ッ|っ)/.exec(t.slice(i)))) {
+      i += m[0].length;
+      const L = readLen(); if (!L) return fail("休符の長さが読めません");
+      pos += L; last = null; continue;
+    }
+    const found = NAME_MAP.find(([nm]) => t.startsWith(nm, i));
+    if (!found) return fail(`「${ch}」が読めません`);
+    i += found[0].length;
+    let pc = found[1], o = oct;
+    while (i < t.length) {
+      const c = t[i];
+      if (c === "#" || c === "♯") { pc++; i++; }
+      else if (c === "♭" || c === "b") { pc--; i++; }
+      else if (c === "↑" || c === "^" || c === "'") { o++; i++; }
+      else if (c === "↓" || c === "_") { o--; i++; }
+      else break;
+    }
+    const L = readLen(); if (!L) return fail("長さは 1,2,4,8,16 (付点は 4. など)");
+    const midi = 12 * (o + 1) + pc;
+    if (midi < 24 || midi > 96) return fail(`${midiName(midi)} は音域の外です`);
+    last = { s: pos, l: L, n: midi }; notes.push(last); pos += L;
+  }
+  return { notes, steps: pos };
+}
+
+const LEN_TOKENS = [[16, "1"], [12, "2."], [8, "2"], [6, "4."], [4, "4"], [3, "8."], [2, "8"], [1, "16"]];
+function lenText(steps) {
+  const parts = [];
+  while (steps > 0) {
+    const [v, tok] = LEN_TOKENS.find(([v]) => v <= steps);
+    parts.push(tok); steps -= v;
+  }
+  return parts.join("&");
+}
+function notesToDoremi(notes, baseOct) {
+  const out = [];
+  let pos = 0;
+  const bar = (p) => { if (p > 0 && p % 16 === 0 && out.length && out[out.length - 1] !== "|") out.push("|"); };
+  for (const n of [...notes].sort((a, b) => a.s - b.s)) {
+    if (n.s > pos) { bar(pos); out.push("休" + lenText(n.s - pos)); pos = n.s; }
+    bar(pos);
+    const o = Math.floor(n.n / 12) - 1, d = o - baseOct;
+    out.push(NOTE_JA[n.n % 12] + (d > 0 ? "↑".repeat(d) : "↓".repeat(-d)) + lenText(n.l));
+    pos = n.s + n.l;
+  }
+  return out.join(" ").replace(/ \| /g, " | ");
+}
+
+/* ---- コード進行と自動伴奏 ---- */
+const CH_Q = { "": [0, 4, 7], m: [0, 3, 7], "7": [0, 4, 7, 10], M7: [0, 4, 7, 11], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10],
+  dim: [0, 3, 6], aug: [0, 4, 8], sus4: [0, 5, 7], sus2: [0, 2, 7], "6": [0, 4, 7, 9], m6: [0, 3, 7, 9] };
+const ROOT_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11, ド: 0, レ: 2, ミ: 4, ファ: 5, ソ: 7, ラ: 9, シ: 11 };
+const ROOT_RE = "(ファ|[CDEFGAB]|ド|レ|ミ|ソ|ラ|シ)([#♯b♭]?)";
+const CHORD_RE = new RegExp(`^${ROOT_RE}(maj7|M7|m7|m6|m|7|dim|aug|sus4|sus2|6)?(?:/${ROOT_RE})?$`);
+const accidental = (a) => (a === "#" || a === "♯" ? 1 : a === "b" || a === "♭" ? -1 : 0);
+
+function parseChord(tok) {
+  const m = CHORD_RE.exec(tok);
+  if (!m) return null;
+  const root = (ROOT_PC[m[1]] + accidental(m[2]) + 12) % 12;
+  const q = CH_Q[m[3] || ""];
+  const bass = m[4] ? (ROOT_PC[m[4]] + accidental(m[5]) + 12) % 12 : root;
+  return { root, iv: q, bass, name: tok };
+}
+function parseProgression(text) {
+  const t = text.normalize("NFKC").trim();
+  if (!t) return { list: [] };
+  const bars = t.includes("|") ? t.split("|").map((b) => b.trim()).filter(Boolean) : t.split(/\s+/);
+  const one = [];
+  for (const b of bars) {
+    const toks = b.split(/\s+/).filter(Boolean);
+    if (![1, 2, 4].includes(toks.length)) return { error: `「${b}」: 1小節に置けるコードは 1・2・4 個です` };
+    for (const tok of toks) {
+      const c = parseChord(tok);
+      if (!c) return { error: `「${tok}」はコードとして読めません (例: C, Am, G7, FM7, Dm7, Csus4)` };
+      one.push({ chord: c, l: 16 / toks.length });
+    }
+  }
+  // 曲の長さまでくり返す
+  const list = [];
+  let s = 0, k = 0;
+  while (s < totalSteps()) { const e = one[k % one.length]; list.push({ s, l: Math.min(e.l, totalSteps() - s), chord: e.chord }); s += e.l; k++; }
+  return { list };
+}
+const chordAt = (list, s) => (list.find((e) => s >= e.s && s < e.s + e.l) || {}).chord;
+const scaleOf = () => (song.minor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11]);
+
+function diatonic(n, steps) {
+  const sc = scaleOf(), rel = ((n - song.key) % 12 + 12) % 12, idx = sc.indexOf(rel);
+  if (idx < 0) return n + (steps > 0 ? 4 : -3);
+  const j = idx + steps, oct = Math.floor(j / 7), k = ((j % 7) + 7) % 7;
+  return n - rel + sc[k] + oct * 12;
+}
+function makeHarmony(mode, list) {
+  return song.tracks[0].notes.map((nt) => {
+    let h = null;
+    const c = mode === "chord" ? chordAt(list, nt.s) : null;
+    if (c) {
+      for (let x = nt.n - 3; x >= nt.n - 9; x--) {
+        if (c.iv.some((iv) => ((x - c.root - iv) % 12 + 12) % 12 === 0)) { h = x; break; }
+      }
+    }
+    if (h === null) h = diatonic(nt.n, mode === "up" ? 2 : -2);
+    return { s: nt.s, l: nt.l, n: h };
+  });
+}
+function chordTones(c, base) {
+  const r = base + c.root;
+  const tones = c.iv.map((iv) => r + iv);
+  if (tones.length === 3) tones.push(r + 12);
+  return tones;
+}
+function makeChordTrack(style, list) {
+  const out = [];
+  const unit = style === "arp8" ? 2 : 1;
+  for (const e of list) {
+    const tones = chordTones(e.chord, 60);
+    for (let s = e.s, k = 0; s < e.s + e.l; s += unit, k++) out.push({ s, l: Math.min(unit, e.s + e.l - s), n: tones[k % tones.length] });
+  }
+  return out;
+}
+function makeBass(style, list) {
+  const out = [];
+  for (const e of list) {
+    const root = 48 + e.chord.bass, fifth = root + 7 > 59 ? root - 5 : root + 7;
+    if (style === "hold") { out.push({ s: e.s, l: e.l, n: root }); continue; }
+    const unit = style === "octave" ? 2 : 4;
+    for (let s = e.s, k = 0; s < e.s + e.l; s += unit, k++) {
+      const n = style === "octave" ? (k % 2 ? root + 12 : root) : style === "fifth" ? (k % 2 ? fifth : root) : root;
+      out.push({ s, l: Math.min(unit, e.s + e.l - s), n });
+    }
+  }
+  return out;
+}
+
+/* ---- 作曲パネル ---- */
+const songUndo = [];
+function pushSongUndo() {
+  songUndo.push(JSON.stringify(song));
+  if (songUndo.length > 40) songUndo.shift();
+  $("mUndo").disabled = false;
+}
+function songChanged(opts = {}) {
+  if (!opts.keepSample) { song.isSample = false; }
+  for (let t = 0; t < 4; t++) if (!opts.keepText || t !== curTrack) song.tracks[t].text = notesToDoremi(song.tracks[t].notes, TRACK_DEF[t].oct);
+  renderMusic(); renderMeter(); saveDraft(); restartIfPlaying();
+}
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const trackColor = (t) => cssVar(`--t${t + 1}`);
+
+function renderMusic() {
+  $("bpm").value = song.bpm; $("bpmOut").textContent = song.bpm;
+  $("bars").value = song.bars; $("key").value = (song.minor ? "m" : "") + song.key;
+  $("chords").value = song.chords;
+  const tabs = $("tabs").children;
+  for (let t = 0; t < 4; t++) {
+    tabs[t].setAttribute("aria-selected", t === curTrack);
+    tabs[t].classList.toggle("muted", song.tracks[t].mute);
+    tabs[t].querySelector("small").textContent = song.tracks[t].notes.length ? `${song.tracks[t].notes.length}音` : "空";
+  }
+  const tr = song.tracks[curTrack];
+  $("duty").value = tr.duty; $("vol").value = tr.vol; $("volOut").textContent = tr.vol;
+  $("mute").setAttribute("aria-pressed", tr.mute);
+  $("mmlTrack").textContent = TRACK_DEF[curTrack].name;
+  if (document.activeElement !== $("mml")) $("mml").value = tr.text;
+  $("mmlHint").textContent = `ド = ${midiName(12 * (TRACK_DEF[curTrack].oct + 1))}`;
+  $("songTag").hidden = !song.isSample;
+  drawRoll();
+}
+
+function drawRoll() {
+  const steps = totalSteps(), low = song.tracks[curTrack].low, high = low + ROWS - 1;
+  const dpr = window.devicePixelRatio || 1;
+  const W = steps * CELL_W, H = ROWS * CELL_H;
+  const c = $("roll"), k = $("rollKeys");
+  for (const [cv, w] of [[c, W], [k, KEYS_W]]) {
+    cv.style.width = w + "px"; cv.style.height = H + "px";
+    cv.width = Math.round(w * dpr); cv.height = Math.round(H * dpr);
+  }
+  const g = c.getContext("2d"), gk = k.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); gk.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const white = cssVar("--roll-white"), black = cssVar("--roll-black"), grid = cssVar("--roll-grid"),
+    beat = cssVar("--roll-beat"), barc = cssVar("--roll-bar"), ink = cssVar("--ink"), muted = cssVar("--muted");
+  gk.fillStyle = cssVar("--surface"); gk.fillRect(0, 0, KEYS_W, H);
+  gk.font = `11px ${getComputedStyle(document.body).fontFamily}`; gk.textBaseline = "middle";
+  for (let r = 0; r < ROWS; r++) {
+    const m = high - r, isBlack = [1, 3, 6, 8, 10].includes(m % 12);
+    g.fillStyle = isBlack ? black : white; g.fillRect(0, r * CELL_H, W, CELL_H);
+    g.fillStyle = grid; g.fillRect(0, (r + 1) * CELL_H - 1, W, 1);
+    gk.fillStyle = isBlack ? black : white; gk.fillRect(0, r * CELL_H, KEYS_W - 1, CELL_H - 1);
+    gk.fillStyle = m % 12 === 0 ? ink : muted;
+    gk.fillText(midiName(m), 4, r * CELL_H + CELL_H / 2);
+  }
+  for (let s = 0; s <= steps; s++) {
+    g.fillStyle = s % 16 === 0 ? barc : s % 4 === 0 ? beat : grid;
+    g.fillRect(s * CELL_W - (s % 16 === 0 ? 1 : 0), 0, s % 16 === 0 ? 2 : 1, H);
+  }
+  // ほかのトラックはうすく
+  song.tracks.forEach((tr, t) => {
+    if (t === curTrack) return;
+    g.globalAlpha = 0.25; g.fillStyle = trackColor(t);
+    for (const n of tr.notes) if (n.n >= low && n.n <= high) g.fillRect(n.s * CELL_W + 2, (high - n.n) * CELL_H + 4, n.l * CELL_W - 4, CELL_H - 8);
+    g.globalAlpha = 1;
+  });
+  const tr = song.tracks[curTrack], col = trackColor(curTrack);
+  g.font = `600 10px ${getComputedStyle(document.body).fontFamily}`; g.textBaseline = "middle";
+  let above = false, below = false;
+  for (const n of tr.notes) {
+    if (n.n > high) { above = true; continue; }
+    if (n.n < low) { below = true; continue; }
+    const x = n.s * CELL_W + 1, y = (high - n.n) * CELL_H + 1, w = n.l * CELL_W - 2, h = CELL_H - 2;
+    g.fillStyle = col; g.beginPath();
+    if (g.roundRect) g.roundRect(x, y, w, h, 3); else g.rect(x, y, w, h);
+    g.fill();
+    if (w > 26) { g.fillStyle = "#fff"; g.fillText(NOTE_JA[n.n % 12], x + 4, y + h / 2 + 0.5); }
+  }
+  $("rangeNote").textContent = above || below
+    ? `表示範囲の${above && below ? "上と下" : above ? "上" : "下"}にも音符があります (▲▼で表示を動かせます)` : "";
+}
+
+function rollClick(e) {
+  const r = $("roll").getBoundingClientRect();
+  const s = Math.floor((e.clientX - r.left) / CELL_W), row = Math.floor((e.clientY - r.top) / CELL_H);
+  if (s < 0 || s >= totalSteps() || row < 0 || row >= ROWS) return;
+  const tr = song.tracks[curTrack], m = tr.low + ROWS - 1 - row;
+  pushSongUndo();
+  const hit = tr.notes.find((n) => s >= n.s && s < n.s + n.l);
+  if (hit && hit.n === m) {
+    tr.notes.splice(tr.notes.indexOf(hit), 1);
+  } else {
+    if (hit) { if (hit.s === s) tr.notes.splice(tr.notes.indexOf(hit), 1); else hit.l = s - hit.s; }
+    const next = tr.notes.filter((n) => n.s > s).sort((a, b) => a.s - b.s)[0];
+    const l = Math.min(noteLen, next ? next.s - s : noteLen, totalSteps() - s);
+    tr.notes.push({ s, l, n: m });
+    tr.notes.sort((a, b) => a.s - b.s);
+    if (!musicSrc) blip(m, tr.duty);
+  }
+  songChanged();
+}
+
+function genWith(fn) {
+  const p = parseProgression($("chords").value);
+  if (p.error) { $("chordMsg").textContent = p.error; return; }
+  $("chordMsg").textContent = "";
+  song.chords = $("chords").value;
+  fn(p.list);
+}
+function applyGenerated(t, notes) { song.tracks[t].notes = notes; song.tracks[t].mute = false; }
+function genHarmony(list) {
+  if (!song.tracks[0].notes.length) { toast("先にメロディを入れてください"); return false; }
+  const mode = $("harmMode").value;
+  if (mode === "chord" && !list.length) { toast("コード進行を入れると、コードに合うハモリになります"); }
+  applyGenerated(1, makeHarmony(list.length ? mode : mode === "chord" ? "down" : mode, list));
+  return true;
+}
+function genChords(list) {
+  if (!list.length) { $("chordMsg").textContent = "コード進行を入れてください (例: C | F C | G7 C)"; return false; }
+  const style = $("chordStyle").value;
+  if (style === "triad") {
+    // 3つのトラックで和音をのばす: ハモリ=3度, 和音=5度, ベース=根音
+    const third = [], fifth = [];
+    for (const e of list) {
+      const tones = chordTones(e.chord, 60);
+      third.push({ s: e.s, l: e.l, n: tones[1] }); fifth.push({ s: e.s, l: e.l, n: tones[2] });
+    }
+    applyGenerated(1, third); applyGenerated(2, fifth);
+    applyGenerated(3, makeBass("hold", list));
+    toast("ハモリ・和音・ベースの3つで和音を作りました");
+  } else applyGenerated(2, makeChordTrack(style, list));
+  return true;
+}
+function genBass(list) {
+  if (!list.length) { $("chordMsg").textContent = "コード進行を入れてください (例: C | F C | G7 C)"; return false; }
+  applyGenerated(3, makeBass($("bassStyle").value, list));
+  return true;
+}
+
+function buildMusicUi() {
+  const bars = $("bars");
+  for (let b = 1; b <= 32; b++) { const o = document.createElement("option"); o.value = b; o.textContent = `${b} 小節`; bars.append(o); }
+  const key = $("key");
+  for (const minor of [false, true]) KEY_NAMES.forEach((nm, i) => {
+    const o = document.createElement("option"); o.value = (minor ? "m" : "") + i;
+    o.textContent = minor ? `${nm.split(" ")[0]}m (短調)` : `${nm} 長調`; key.append(o);
+  });
+  const tabs = $("tabs");
+  TRACK_DEF.forEach((d, t) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.setAttribute("role", "tab"); b.className = "tab";
+    b.style.setProperty("--dot", `var(--t${t + 1})`);
+    b.innerHTML = `<i aria-hidden="true"></i><span></span><small></small>`;
+    b.querySelector("span").textContent = d.name;
+    b.onclick = () => { curTrack = t; renderMusic(); };
+    tabs.append(b);
+  });
+  for (const b of $("lens").children) b.onclick = () => {
+    noteLen = +b.dataset.len;
+    for (const x of $("lens").children) x.setAttribute("aria-pressed", x === b);
+  };
+  $("roll").addEventListener("click", rollClick);
+  $("octUp").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.min(96 - ROWS + 1, tr.low + 12); drawRoll(); saveDraft(); };
+  $("octDown").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.max(24, tr.low - 12); drawRoll(); saveDraft(); };
+  $("bpm").addEventListener("input", () => { song.bpm = +$("bpm").value; $("bpmOut").textContent = song.bpm; songChanged({ keepSample: true }); });
+  $("bars").addEventListener("change", () => { pushSongUndo(); song.bars = +$("bars").value; songChanged(); });
+  $("key").addEventListener("change", () => { const v = $("key").value; song.minor = v[0] === "m"; song.key = +v.replace("m", ""); saveDraft(); });
+  $("duty").addEventListener("change", () => { pushSongUndo(); song.tracks[curTrack].duty = +$("duty").value; songChanged({ keepSample: true }); });
+  $("vol").addEventListener("input", () => { song.tracks[curTrack].vol = +$("vol").value; $("volOut").textContent = $("vol").value; songChanged({ keepSample: true }); });
+  $("mute").onclick = () => { const tr = song.tracks[curTrack]; tr.mute = !tr.mute; songChanged({ keepSample: true }); };
+  $("tClear").onclick = () => { pushSongUndo(); song.tracks[curTrack].notes = []; songChanged(); };
+  $("mUndo").onclick = () => {
+    const s = songUndo.pop(); if (!s) return;
+    song = JSON.parse(s); $("mUndo").disabled = !songUndo.length; songChanged({ keepSample: true });
+  };
+  $("mmlApply").onclick = () => {
+    const r = parseDoremi($("mml").value, TRACK_DEF[curTrack].oct);
+    if (r.error) { $("mmlMsg").textContent = r.error; return; }
+    pushSongUndo();
+    if (r.steps > totalSteps()) {
+      const need = Math.min(32, Math.ceil(r.steps / 16));
+      if (need > song.bars) song.bars = need;
+    }
+    song.tracks[curTrack].notes = r.notes.filter((n) => n.s < totalSteps());
+    song.tracks[curTrack].mute = false;
+    $("mmlMsg").textContent = `${r.notes.length}個の音符を入れました` + (r.steps > 32 * 16 ? " (32小節を超えた分は切りました)" : "");
+    $("mml").blur();
+    songChanged();
+  };
+  $("genHarm").onclick = () => genWith((list) => { pushSongUndo(); if (genHarmony(list)) songChanged(); });
+  $("genChord").onclick = () => genWith((list) => { pushSongUndo(); if (genChords(list)) songChanged(); });
+  $("genBass").onclick = () => genWith((list) => { pushSongUndo(); if (genBass(list)) songChanged(); });
+  $("genAll").onclick = () => genWith((list) => {
+    if (!list.length) { $("chordMsg").textContent = "コード進行を入れてください (例: C | F C | G7 C)"; return; }
+    pushSongUndo();
+    if ($("chordStyle").value === "triad") genChords(list);
+    else { if (song.tracks[0].notes.length) genHarmony(list); genChords(list); genBass(list); }
+    songChanged();
+  });
+  $("chords").addEventListener("input", () => { song.chords = $("chords").value; saveDraft(); });
+  $("mPlay").onclick = () => { if (musicSrc) stopMusic(); else startMusic(0, "music"); };
+  $("sndPrev").onclick = () => {
+    const on = $("sndPrev").getAttribute("aria-pressed") !== "true";
+    $("sndPrev").setAttribute("aria-pressed", on);
+    if (on && state.playing) { playIdx = 0; tickWait = 0; needLcd = true; startMusic(0, "preview"); }
+    if (!on && musicFrom === "preview") stopMusic();
+  };
+}
+
+function updateMusicUi() {
+  $("mPlay").textContent = musicSrc ? "曲を止める" : "曲を再生";
+  $("playhead").hidden = !musicSrc;
+}
+
+function tickMusicUi() {
+  if (!musicSrc) return;
+  const x = musicPos() * SND_RATE / musicSL * CELL_W;
+  $("playhead").style.transform = `translateX(${x}px)`;
+  const sc = $("rollScroll");
+  if (x < sc.scrollLeft || x > sc.scrollLeft + sc.clientWidth - KEYS_W - 20) sc.scrollLeft = Math.max(0, x - 8);
+}
+
+function sampleSong() {
+  const s = newSong();
+  s.bpm = 110; s.bars = 4; s.isSample = true;
+  s.chords = "C | F C | F C | G7 C";
+  song = s;
+  song.tracks[0].notes = parseDoremi("ド4 ド4 ソ4 ソ4 | ラ4 ラ4 ソ2 | ファ4 ファ4 ミ4 ミ4 | レ4 レ4 ド2", 5).notes;
+  const list = parseProgression(s.chords).list;
+  song.tracks[1].notes = makeHarmony("chord", list);
+  song.tracks[2].notes = makeChordTrack("arp16", list);
+  song.tracks[3].notes = makeBass("octave", list);
+  for (let t = 0; t < 4; t++) song.tracks[t].text = notesToDoremi(song.tracks[t].notes, TRACK_DEF[t].oct);
+  return s;
+}
+
+/* ============================================================
+ * 保存・書き出し
+ * ============================================================ */
+let downloads = null;
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("downloads").then((d) => { downloads = d; }).catch(() => {});
+}
+
+async function offerFile(filename, blob) {
+  if (downloads) {
+    try { await downloads.save({ filename, data: blob }); toast(`${filename} を保存しました`); }
+    catch (e) {
+      const code = e && e.code;
+      if (code === "declined") toast("保存をやめました");
+      else if (code === "rate_limited") toast("保存の確認画面がすでに開いています");
+      else toast("この画面では保存できませんでした");
+    }
+    return;
+  }
+  // 単体のHTMLとして開いたとき
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function spritePng(scale) {
+  const c = document.createElement("canvas");
+  c.width = N * state.frames.length * scale; c.height = N * scale;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = "#000";
+  state.frames.forEach((f, k) => { for (let i = 0; i < N * N; i++) if (f[i]) g.fillRect((k * N + (i % N)) * scale, ((i / N) | 0) * scale, scale, scale); });
+  return new Promise((res) => c.toBlob((b) => b.arrayBuffer().then((ab) => res(new Uint8Array(ab))), "image/png"));
+}
+
+function readmeText(name, blocks, hasMusic) {
+  return [
+    "ポケステ ドット絵工房 で作ったデータ",
+    "",
+    `タイトル: ${$("title").value}`,
+    `ファイル名: ${name}`,
+    `コマ数: ${state.frames.length} / 1コマ ${state.delay}/30秒 / ${blocks}ブロック`,
+    hasMusic ? `曲: ${song.bars}小節 / BPM ${song.bpm}` : "曲: なし",
+    "",
+    "anime.mcr  メモリーカードイメージ(128KB)。no$psx などのエミュレータや、",
+    "           MemcardRex などのカード管理ソフトで開けます。",
+    "anime.mcs  セーブ1件分。今使っているカードイメージや実機カードに追加するとき。",
+    "anime.bin  ポケステ実行ファイル本体 (SC形式)。",
+    "anime.pda  ドット絵データ。PCで再ビルドするとき: make FRAMES=anime.pda",
+    "song.pmu   曲データ。PCで再ビルドするとき: make FRAMES=anime.pda MUSIC=song.pmu",
+    "project.json  ツールで続きを編集するための作品ファイル (「作品を開く」で読み込み)",
+    "frames.png 全コマを横に並べた画像。",
+    "",
+    "ポケステでの操作:",
+    "  決定(短押し) 一時停止/再開   決定(2秒長押し) 時計画面へ戻る",
+    "  右/左 アニメを速く/遅く   上 白黒反転",
+    "  下 再生中は曲を鳴らす/止める、一時停止中は1コマ送り",
+    "  (時計画面で消音にしていると最初は鳴りません。下ボタンで鳴らせます)",
+    "",
+  ].join("\r\n");
+}
+
+$("saveZip").onclick = async () => {
+  try {
+    const name = saveName($("saveid").value);
+    const pmu = songHasNotes() ? compileSong() : null;
+    const { data, blocks } = buildPocFile(state.frames, state.delay, $("title").value || "ドット絵アニメ", pmu);
+    const png = await spritePng(1);
+    const extra = pmu ? [{ name: "song.pmu", data: pmu }] : [];
+    const zip = makeZip([
+      { name: "anime.mcr", data: buildMcr(data, blocks, name) },
+      { name: "anime.mcs", data: buildMcs(data, blocks, name) },
+      { name: "anime.bin", data },
+      { name: "anime.pda", data: buildPda(state.frames, state.delay) },
+      ...extra,
+      { name: "frames.png", data: png },
+      { name: "project.json", data: new TextEncoder().encode(projectJson()) },
+      { name: "README.txt", data: new TextEncoder().encode(readmeText(name, blocks, !!pmu)) },
+    ]);
+    const base = ($("saveid").value || "anime").replace(/[^A-Za-z0-9_-]/g, "") || "anime";
+    await offerFile(`pocketstation-${base.toLowerCase()}.zip`, zip);
+  } catch (e) { toast(e.message || "書き出しに失敗しました"); }
+};
+$("savePng").onclick = async () => {
+  const png = await spritePng(8);
+  await offerFile("frames.png", new Blob([png], { type: "image/png" }));
+};
+$("saveid").addEventListener("input", (e) => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""); if (v !== e.target.value) e.target.value = v; saveDraft(); });
+$("title").addEventListener("input", saveDraft);
+
+/* 作品ファイル (アニメと曲をまとめた JSON) */
+function projectJson() {
+  const bytes = buildPda(state.frames, state.delay);
+  let s = ""; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return JSON.stringify({ app: "pocketstation-dot-studio", version: 1, title: $("title").value, id: $("saveid").value, pda: btoa(s), song }, null, 1);
+}
+function validSong(x) {
+  if (!x || !Array.isArray(x.tracks) || x.tracks.length !== 4) return null;
+  const s = newSong();
+  s.bpm = Math.max(40, Math.min(240, +x.bpm || 120));
+  s.bars = Math.max(1, Math.min(32, +x.bars || 4));
+  s.key = Math.max(0, Math.min(11, +x.key || 0)); s.minor = !!x.minor;
+  s.chords = typeof x.chords === "string" ? x.chords : "";
+  s.isSample = !!x.isSample;
+  x.tracks.forEach((t, i) => {
+    const d = s.tracks[i];
+    d.duty = [32, 64, 128].includes(+t.duty) ? +t.duty : d.duty;
+    d.vol = Math.max(0, Math.min(15, +t.vol)); if (Number.isNaN(d.vol)) d.vol = TRACK_DEF[i].vol;
+    d.mute = !!t.mute; d.low = Math.max(24, Math.min(72, +t.low || d.low));
+    d.notes = (Array.isArray(t.notes) ? t.notes : []).filter((n) => n && n.l > 0 && n.s >= 0 && n.n >= 24 && n.n <= 96)
+      .map((n) => ({ s: n.s | 0, l: n.l | 0, n: n.n | 0 }));
+    d.text = notesToDoremi(d.notes, TRACK_DEF[i].oct);
+  });
+  return s;
+}
+async function openProject(file) {
+  try {
+    const j = JSON.parse(await file.text());
+    if (j.app !== "pocketstation-dot-studio" || !j.pda) throw new Error();
+    localStorage.setItem(STORE_KEY, JSON.stringify({ pda: j.pda, title: j.title, id: j.id, sample: false, song: j.song }));
+  } catch (e) { toast("作品ファイルとして読めませんでした"); return; }
+  if (!loadDraft()) { toast("作品ファイルとして読めませんでした"); return; }
+  stopMusic(); undoStack.length = 0; songUndo.length = 0;
+  state.cur = 0; state.isSample = false; song.isSample = false;
+  renderAll(); renderMusic(); toast("作品を開きました");
+}
+$("saveProj").onclick = () => offerFile(`${(($("saveid").value || "anime").replace(/[^A-Za-z0-9_-]/g, "") || "anime").toLowerCase()}.json`, new Blob([projectJson()], { type: "application/json" }));
+$("openProj").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) openProject(f); e.target.value = ""; });
+
+/* 下書き (この端末だけ) */
+let draftTimer = 0;
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    try {
+      const bytes = buildPda(state.frames, state.delay);
+      let s = ""; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      localStorage.setItem(STORE_KEY, JSON.stringify({ pda: btoa(s), title: $("title").value, id: $("saveid").value, sample: state.isSample, song }));
+    } catch (e) { /* 保存できない環境 */ }
+  }, 400);
+}
+function loadDraft() {
+  try {
+    const j = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (!j || !j.pda) return false;
+    const b = b64ToBytes(j.pda), v = new DataView(b.buffer);
+    const n = v.getUint32(4, true), d = v.getUint32(8, true);
+    if (n < 1 || b.length < 16 + n * 128) return false;
+    state.frames = [];
+    for (let i = 0; i < n; i++) { const w = new Uint32Array(N); for (let y = 0; y < N; y++) w[y] = v.getUint32(16 + i * 128 + y * 4, true); state.frames.push(wordsToFrame(w)); }
+    state.delay = Math.max(1, Math.min(30, d || 4));
+    if (typeof j.title === "string") $("title").value = j.title;
+    if (typeof j.id === "string") $("saveid").value = j.id;
+    state.isSample = !!j.sample;
+    song = validSong(j.song) || sampleSong();
+    return true;
+  } catch (e) { return false; }
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* 起動 */
+buildMusicUi();
+if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
+renderAll();
+renderMusic();
+updateMusicUi();
+requestAnimationFrame(loop);
+</script>
