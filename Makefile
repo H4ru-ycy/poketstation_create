@@ -4,6 +4,7 @@
 #   make FRAMES=my.pda         … 変換ツールで書き出した .pda を使う
 #   make MUSIC=song.pmu        … 変換ツールで書き出した曲 (.pmu) を入れる
 #   make NOMUSIC=1             … 曲なし (省略時はサンプル曲「きらきら星」)
+#   make CHARA=project.json    … キャラクターモードで作る (変換ツールの作品ファイルの設定を使う)
 #   make TOOLCHAIN=gcc         … arm-none-eabi-gcc を使う (既定は clang)
 #
 # 出力: build/anime.mcr (メモリーカードイメージ, エミュレータ/書き込み用)
@@ -15,6 +16,7 @@ FILENAME  ?= BISLPSP00000ANIME
 FRAMES    ?=
 MUSIC     ?=
 DELAY     ?=
+CHARA     ?=
 
 ifeq ($(TOOLCHAIN),gcc)
 CC      = arm-none-eabi-gcc
@@ -33,7 +35,7 @@ endif
 CFLAGS  = $(ARCH) -Os -ffreestanding -fno-builtin -nostdlib \
           -ffunction-sections -fdata-sections -Wall -Wextra
 
-OBJS = build/crt0.o build/main.o build/sound.o build/sound_fiq.o
+OBJS = build/crt0.o build/main.o build/chara.o build/sound.o build/sound_fiq.o
 
 ARGS = --title "$(TITLE)" --filename "$(FILENAME)"
 ifneq ($(FRAMES),)
@@ -47,6 +49,9 @@ endif
 ifneq ($(DELAY),)
 ARGS += --delay $(DELAY)
 endif
+ifneq ($(CHARA),)
+ARGS += --chara $(CHARA)
+endif
 
 all: build/anime.mcr
 
@@ -56,7 +61,7 @@ build:
 build/sound_fiq.o: src/sound.S | build
 	$(CC) $(ARCH) -c $< -o $@
 
-build/%.o: src/%.c src/poc.h src/sound.h | build
+build/%.o: src/%.c src/poc.h src/sound.h src/app.h src/font.h | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/%.o: src/%.S | build
@@ -68,17 +73,25 @@ build/player.elf: $(OBJS) src/poc.ld
 build/player.bin: build/player.elf
 	$(OBJCOPY) -O binary $< $@
 
-build/anime.mcr: build/player.bin tools/mkpoc.py tools/pmus.py $(FRAMES) $(MUSIC)
+build/anime.mcr: build/player.bin tools/mkpoc.py tools/pmus.py $(FRAMES) $(MUSIC) $(CHARA)
 	python3 tools/mkpoc.py build/player.bin -o build/anime $(ARGS)
+
+# フォント (src/font.h と converter/font.js) を作り直す
+font:
+	python3 tools/genfont.py
+
+test: build/anime.mcr
+	python3 tests/test_player.py build/anime.bin 0
+	python3 tests/test_chara.py build/player.bin 0
 
 clean:
 	rm -rf build
 
-.PHONY: all clean
+.PHONY: all clean font test
 
 # スマホ用の変換ツール (再生プログラム埋め込み済みの単体HTML)
 converter: build/dot-studio.html
-build/dot-studio.html: converter/converter.src.html converter/omr.js build/player.bin tools/embed_player.py
+build/dot-studio.html: converter/converter.src.html converter/omr.js converter/font.js converter/chara.js build/player.bin tools/embed_player.py
 	python3 tools/embed_player.py $< build/player.bin $@
 
 .PHONY: converter

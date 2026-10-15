@@ -134,8 +134,65 @@ def color_icon(frame):
     return bytes(out)
 
 
-def build_file(player, frames, delay, title, music=b""):
-    """music: PMUS 形式の曲データ (無ければ空)。フレームの後ろに付ける"""
+# ---------------------------------------------------------------- キャラクターモード
+
+BUTTONS = {"fire": 1, "right": 2, "left": 4, "down": 8, "up": 16}
+NONE = 0xFFFFFFFF
+PCHR_WORDS = 40
+
+
+def day_number(y, m, d):
+    """2000年1月1日を 0 とした日数 (chara.c の day_number と同じ)"""
+    import datetime
+    return (datetime.date(y, m, d) - datetime.date(2000, 1, 1)).days
+
+
+def build_pchr(c):
+    """キャラクターモードの設定 (辞書) → PCHR ブロック (src/chara.c を参照)
+    フレーム番号は 0 始まり。None か -1 は「なし」。時間は秒。ボタンは fire/right/left/down/up
+    曲の間: singMode="faces" (singA/singB を4分音符ごとに交互) か "anim" (singFirst から singCount コマ。
+    singSync=0 なら singDelay (1/30秒単位) ごと、1-4 なら曲の16分・8分・4分・2分音符ごと)"""
+    fr = lambda v: NONE if v is None or v < 0 else int(v)
+    tick = lambda sec: max(1, round(float(sec) * 30))
+    btn = lambda b: BUTTONS[b] if b else 0
+    y, m, d = (int(x) for x in c.get("baseDate", "2026-01-22").split("-"))
+    cmd = [btn(b) for b in c.get("cmd", [])][:8]
+    w = [0] * PCHR_WORDS
+    w[0], w[1] = 0x52484350, 2
+    w[2], w[3] = fr(c.get("idle", 0)), fr(c.get("blink"))
+    faces = (c.get("faces") or [None] * 5) + [None] * 5
+    for i in range(5):
+        w[4 + i] = fr(faces[i])
+    w[9] = tick(c.get("faceHold", 2))
+    w[10], w[11] = fr(c.get("clockBg")), fr(c.get("daysBg"))
+    w[12], w[13] = fr(c.get("singA")), fr(c.get("singB"))
+    w[14], w[15] = btn(c.get("dbl")), btn(c.get("long"))
+    w[16] = len(cmd)
+    for i, b in enumerate(cmd):
+        w[17 + i] = b
+    w[25] = day_number(y, m, d)
+    w[26] = 1 if c.get("countFrom", 0) else 0
+    w[27] = tick(c.get("show", 5))
+    w[28] = tick(c.get("dblWin", 0.4))
+    w[29] = tick(c.get("longTime", 1.0))
+    w[30] = tick(c.get("cmdGap", 1.0))
+    w[31] = int(c.get("daysY", 12))
+    w[32] = tick(c.get("exit", 3))
+    # version 2: 曲の間のアニメーション
+    anim = c.get("singMode") == "anim"
+    if c.get("singMode") == "image":
+        w[13] = NONE
+    w[34] = 1 if anim else 0
+    w[35] = max(0, int(c.get("singFirst", 0) or 0))
+    w[36] = max(0, int(c.get("singCount", 0) or 0)) if anim else 0
+    w[37] = max(1, min(30, int(c.get("singDelay", 4) or 4)))
+    w[38] = max(0, min(4, int(c.get("singSync", 3) or 0)))
+    return struct.pack(f"<{PCHR_WORDS}I", *w)
+
+
+def build_file(player, frames, delay, title, music=b"", chara=None):
+    """music: PMUS 形式の曲データ (無ければ空)。フレームの後ろに付ける
+    chara: キャラクターモードの設定 (辞書)。あれば曲の後ろに PCHR ブロックを付ける"""
     player = bytearray(player)
     if player[:4] != INFO_MAGIC:
         sys.exit("player.bin の先頭に PANM 情報テーブルがありません (リンク順を確認)")
@@ -149,7 +206,11 @@ def build_file(player, frames, delay, title, music=b""):
     if music and music[:4] != b"PMUS":
         sys.exit("曲データ (.pmu) の形式が違います")
     music_addr = frames_addr + len(frame_bytes) if music else 0
-    struct.pack_into("<IIII", player, 8, frames_addr, count, delay, music_addr)
+    if chara is not None and music:
+        music = bytes(music) + b"\0" * (-len(music) % 4) + b"\0" * 16   # 1回だけ鳴らす曲の終わりの目印 (休符1ステップ)
+    chara_bytes = build_pchr(chara) if chara is not None else b""
+    chara_addr = frames_addr + len(frame_bytes) + len(music) if chara is not None else 0
+    struct.pack_into("<IIIII", player, 8, frames_addr, count, delay, music_addr, chara_addr)
     body = bytes(player) + b"\0" * (-len(player) % 4)
 
     # タイトルセクタ
@@ -166,9 +227,15 @@ def build_file(player, frames, delay, title, music=b""):
     struct.pack_into("<HH", hdr, 0x60, 0x7FFF, 0x8000)   # パレット: 0=白, 1=黒
 
     icon_list = bytearray(0x80)
-    struct.pack_into("<HHI", icon_list, 0, count, delay, frames_addr)
+    icon = 0
+    if chara is not None:      # キャラクターモード: アイコンは待機の顔1枚
+        icon = struct.unpack_from("<I", chara_bytes, 8)[0]
+        icon = icon if icon < count else 0
+        struct.pack_into("<HHI", icon_list, 0, 1, delay, frames_addr + icon * 128)
+    else:
+        struct.pack_into("<HHI", icon_list, 0, count, delay, frames_addr)
 
-    data = bytes(hdr) + color_icon(frames[0]) + bytes(icon_list) + body + frame_bytes + bytes(music)
+    data = bytes(hdr) + color_icon(frames[icon]) + bytes(icon_list) + body + frame_bytes + bytes(music) + chara_bytes
     assert struct.unpack_from("<I", data, HEADER_SIZE + 4)[0] == entry
     blocks = (len(data) + BLOCK - 1) // BLOCK
     if blocks > MAX_BLOCKS:
@@ -246,6 +313,7 @@ def main():
     ap.add_argument("--title", default="ドット絵アニメ", help="メモリーカード画面に出るタイトル")
     ap.add_argument("--filename", default="BISLPSP00000ANIME", help="セーブのファイル名 (7文字目はP)")
     ap.add_argument("--sample-pda", help="サンプルアニメを .pda で書き出して終了")
+    ap.add_argument("--chara", help="キャラクターモードの設定 (.json)。変換ツールの project.json でも可")
     a = ap.parse_args()
 
     if a.sample_pda:
@@ -268,7 +336,14 @@ def main():
         sys.path.insert(0, __file__.rsplit("/", 1)[0])
         from pmus import sample_song
         music = sample_song()
-    filedata, blocks = build_file(player, frames, delay, a.title, music)
+    chara = None
+    if a.chara:
+        import json
+        j = json.load(open(a.chara, encoding="utf-8"))
+        chara = j.get("chara", j)
+        if "enabled" in chara and not chara["enabled"]:
+            chara = None
+    filedata, blocks = build_file(player, frames, delay, a.title, music, chara)
 
     open(a.out + ".bin", "wb").write(filedata)
     open(a.out + ".mcs", "wb").write(build_mcs(filedata, blocks, name))

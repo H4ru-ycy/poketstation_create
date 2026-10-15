@@ -1,0 +1,414 @@
+"""
+test_chara.py - キャラクターモードをシミュレータで動かして確かめる
+
+  python3 tests/test_chara.py build/player.bin [音量 0=普通 1=小 2=消音]
+
+1. ボタン操作の台本どおりに player を動かし、毎 tick の画面と音を記録する
+2. 同じ台本で converter/chara.js (変換ツールのプレビュー) を動かし、画面が1tickずつ一致するか比べる
+3. 表情・時計・日数・曲 (1回だけ鳴って待機に戻る)・終了 を個別に確かめる
+"""
+import json
+import os
+import struct
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+from armsim import ARM, Halt  # noqa: E402
+import test_player  # noqa: E402
+from test_player import PocBus, run_fiq, signed10  # noqa: E402
+
+# 1タイマカウント (CPU 512サイクル) あたりの命令数。実機はおよそ 200。
+# 時計の描画などが 1tick (260カウント) に収まるかを見るので、少なめの 40 で動かす
+test_player.K = 40
+from pmus import render  # noqa: E402
+import mkpoc  # noqa: E402
+
+F, R, L, D, U = 1, 2, 4, 8, 16
+DATE = 0x20261015                  # 2026-10-15
+TIME0 = (5 << 24) | 0x113720      # 木曜 11:37:20
+
+
+def bcd(v):
+    return ((v // 10) << 4) | (v % 10)
+
+
+def rtc(t):
+    """秒だけ進める (11:37:20 から)"""
+    return DATE, (TIME0 & 0xFFFFFF00) | bcd((20 + t // 30) % 60)
+
+
+def make_frames():
+    """9コマ: コマ i は i 行目と (i+10) 列目が黒い (どのコマか見分けられる絵)"""
+    out = []
+    for i in range(9):
+        f = [0] * 32
+        f[i] = 0xFFFFFFFF
+        for y in range(32):
+            f[y] |= 1 << (i + 10)
+        out.append(f)
+    return out
+
+
+def make_song():
+    """8ステップ・BPM 240 の短い曲 (1回で約0.5秒)"""
+    steplen = round(7808 * 60 / (240 * 4))
+    words = []
+    notes = [0x0100, 0x0120, 0x0140, 0xFFFFFFFF, 0x0180, 0, 0x01A0, 0x01C0]
+    for n in notes:
+        w = n if n in (0, 0xFFFFFFFF) else (n | (128 << 16) | (60 << 24))
+        words += [w, 0, 0, w if w not in (0, 0xFFFFFFFF) else w]
+    hdr = struct.pack("<4sIIII12x", b"PMUS", 1, len(notes), steplen, steplen - round(steplen / 8))
+    return hdr + struct.pack(f"<{len(words)}I", *words)
+
+
+CHARA = {
+    "idle": 0, "blink": 1, "faces": [2, 3, 4, None, 5], "faceHold": 1.0,
+    "clockBg": None, "daysBg": 6, "singA": 7, "singB": 8,
+    "dbl": "up", "long": "fire", "cmd": ["up", "up", "down", "down", "left", "right"],
+    "baseDate": "2026-01-22", "countFrom": 0, "show": 2.0, "dblWin": 0.4, "longTime": 1.0,
+    "cmdGap": 1.0, "daysY": 12, "exit": 3.0,
+}
+
+
+def script(t):
+    b = 0
+    if 20 <= t < 22: b |= R                         # 表情 (右)
+    if t in (60, 66): b |= U                         # 2回押し → 時計 (コマンドの途中かもしれないので少し待つ)
+    for k, bb in enumerate([U, U, D, D, L, R]):      # コマンド → 曲
+        if t == 150 + k * 6: b |= bb
+    if 230 <= t < 270: b |= F                       # 長押し → 日数
+    if t == 300: b |= R                              # 日数の表示中に押す → 待機
+    for k, bb in enumerate([U, U, D, D, L, R]):      # もう一度コマンド
+        if t == 420 + k * 6: b |= bb
+    if t == 460: b |= F                              # 曲の途中で決定 → 止める
+    if t == 470: b |= D                              # 表情なしのボタン
+    if t == 480: b |= U                              # 1回だけ (2回押しにならない)
+    if t >= 560: b |= L                              # 3秒押し続けて終了
+    return b
+
+
+CHARA_B = dict(CHARA, dbl="fire", long="up", cmd=["left", "right", "left", "right"], countFrom=1, faces=[None] * 5,
+               blink=None, daysBg=None, singB=None)
+DATE_B = 0x19990101                # 時計が合っていない (BIOS が 1999年1月1日に戻した)
+
+
+def script_b(t):
+    b = 0
+    if t in (20, 25): b |= F                         # 2回押し (コマンドとは関係ない) → すぐ時計
+    if 100 <= t < 140: b |= U                        # 長押し → 日数 ("--")
+    for k, bb in enumerate([L, R, L, R]):            # コマンド (曲なし) → 曲の表情を2秒
+        if t == 200 + k * 5: b |= bb
+    if t >= 300: b |= R
+    return b
+
+
+def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000):
+    """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
+    frames = make_frames()
+    data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", song, conf)
+    cfg_addr = struct.unpack_from("<8I", data, 0x180)[6]
+    cfg = list(struct.unpack_from(f"<{mkpoc.PCHR_WORDS}I", data, cfg_addr - 0x02000000))
+    bus = PocBus(data)
+    cpu = ARM(bus)
+    bus.cpu = cpu
+    bus.buttons = script_fn
+    cpu.r[15] = struct.unpack_from("<I", data, 0x5C)[0]
+    swi_base = bus.swi
+
+    def swi(cpu, n):
+        if n in (0x0D, 0x0E):
+            cpu.r[0] = date if n == 0x0D else time
+        else:
+            swi_base(cpu, n)
+    bus.swi = swi
+    last_t = 0
+    try:
+        while cpu.steps < 30_000_000:
+            cpu.step()
+            t = bus.tick()
+            if t != last_t:
+                last_t = t
+                if bus.fiq_cb and _fiq_enabled(bus):
+                    run_fiq(cpu, bus, 260)
+        raise SystemExit("終了しませんでした")
+    except Halt as e:
+        if str(e) != "exit":
+            raise SystemExit(f"停止: {e}")
+    dev = [list(v) for _, v in bus.draws]
+    n = len(dev) + 2
+    steplen = struct.unpack_from("<I", song, 12)[0] if song else 0
+    inp = {"cfg": cfg, "frames": frames, "song": {"count": struct.unpack_from("<I", song, 8)[0], "steplen": steplen} if song else None,
+           "buttons": [script_fn(t) for t in range(n + 200)], "rtc": [{"date": date, "time": time} for _ in range(n + 200)]}
+    js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
+                                   capture_output=True, text=True, check=True).stdout)
+    js_fb = [j["fb"] for j in js if not j["exit"]]
+    mism = [k + 1 for k in range(min(len(dev), len(js_fb))) if dev[k] != js_fb[k]]
+    same = not mism and len(dev) == len(js_fb)
+    note = f"{len(dev)} tick すべて一致" if same else f"違う tick {mism[:8]} 長さ {len(dev)}/{len(js_fb)}"
+    return dev, same, note, bus, frames
+
+
+def script_anim(t):
+    b = 0
+    for k, bb in enumerate([L, R, L, R]):
+        if t == 20 + k * 5: b |= bb
+    for k, bb in enumerate([L, R, L, R]):
+        if t == 200 + k * 5: b |= bb
+    if t >= 330: b |= R
+    return b
+
+
+def scenario_anim(player_path):
+    """曲の間のアニメーション: 曲に合わせて (16分音符ごと) と、時間で (3tick ごと・曲なし)"""
+    res = []
+    song = make_song()
+    conf = dict(CHARA_B, singMode="anim", singFirst=2, singCount=4, singSync=1)
+    dev, same, note, bus, frames = run_variant(player_path, conf, song, script_anim)
+    res.append((same, f"[アニメ・曲に合わせる] プレビューと実機の画面が {note}"))
+    which = [next((i for i, f in enumerate(frames) if f == d), None) for d in dev]
+    seq = [which[t - 1] for t in range(35, 60)]
+    steplen = struct.unpack_from("<I", song, 12)[0]
+    expect = []
+    for t in range(35, 60):
+        el = (t - 35) * 260
+        reads = 0 if el < 1 else min(8, (el - 1) // steplen + 1)
+        expect.append(2 + (max(0, reads) % 4) if (t - 35) * 260 < 8 * steplen + 1 else 0)
+    res.append((seq[:14] == expect[:14], f"[アニメ・曲に合わせる] 16分音符ごとにコマ2→3→4→5→2… ({seq[:14]})"))
+    conf2 = dict(conf, singSync=0, singDelay=3)
+    dev2, same2, note2, _, _ = run_variant(player_path, conf2, b"", script_anim)
+    res.append((same2, f"[アニメ・時間で] プレビューと実機の画面が {note2}"))
+    which2 = [next((i for i, f in enumerate(frames) if f == d), None) for d in dev2]
+    seq2 = which2[35 - 1:35 - 1 + 15]
+    res.append((seq2 == [2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 2, 2, 2], f"[アニメ・時間で] 3tick ごとに次のコマ ({seq2})"))
+    res.append((which2[35 + 60 - 1] == 0, "[アニメ・時間で] 曲が無いときは2秒で待機に戻る"))
+    conf3 = dict(conf, singFirst=7, singCount=5)      # 範囲がコマ数を超える → あるところまで
+    dev3, same3, note3, _, _ = run_variant(player_path, conf3, song, script_anim)
+    res.append((same3, f"[アニメ・範囲がはみ出す] プレビューと実機の画面が {note3}"))
+    return res
+
+
+def scenario_b(player_path):
+    """2つ目の設定: 曲なし・時計が合っていない・2回押しのボタンがコマンドに無い"""
+    frames = make_frames()
+    data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", b"", CHARA_B)
+    cfg_addr = struct.unpack_from("<8I", data, 0x180)[6]
+    cfg = list(struct.unpack_from(f"<{mkpoc.PCHR_WORDS}I", data, cfg_addr - 0x02000000))
+    bus = PocBus(data)
+    cpu = ARM(bus)
+    bus.cpu = cpu
+    bus.buttons = script_b
+    cpu.r[15] = struct.unpack_from("<I", data, 0x5C)[0]
+    swi_base = bus.swi
+
+    def swi(cpu, n):
+        if n in (0x0D, 0x0E):
+            cpu.r[0] = DATE_B if n == 0x0D else 0x07000000
+        else:
+            swi_base(cpu, n)
+    bus.swi = swi
+    try:
+        while cpu.steps < 20_000_000:
+            cpu.step()
+        raise SystemExit("終了しませんでした")
+    except Halt as e:
+        if str(e) != "exit":
+            raise SystemExit(f"停止: {e}")
+    dev = [list(v) for _, v in bus.draws]
+    n = len(dev) + 2
+    inp = {"cfg": cfg, "frames": frames, "song": None, "buttons": [script_b(t) for t in range(n + 200)],
+           "rtc": [{"date": DATE_B, "time": 0x07000000} for _ in range(n + 200)]}
+    js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
+                                   capture_output=True, text=True, check=True).stdout)
+    js_fb = [j["fb"] for j in js if not j["exit"]]
+    mism = [k + 1 for k in range(min(len(dev), len(js_fb))) if dev[k] != js_fb[k]]
+    res = []
+    res.append((not mism and len(dev) == len(js_fb), f"[設定2] プレビューと実機の画面が {len(dev)} tick すべて一致" + (f" 違う tick {mism[:8]} 長さ {len(dev)}/{len(js_fb)}" if mism or len(dev) != len(js_fb) else "")))
+    clock = dev[25 - 1] != frames[0] and dev[24 - 1] == frames[0]
+    res.append((clock, "[設定2] コマンドと関係ない2回押しは、すぐ時計を出す"))
+    res.append((read_big(dev[129 - 1], 12, [9, 16]) == "--", "[設定2] 時計が合っていないときは日数を -- にする"))
+    res.append((dev[215 - 1] == frames[7] and dev[215 + 60 - 1] == frames[0], "[設定2] 曲が無いときは曲の表情を2秒出して戻る"))
+    res.append((not any(s[0] == 0x01 for s in bus.swis), "[設定2] 曲が無いときは FIQ を使わない"))
+    return res
+
+
+def main(player_path, volume=0):
+    frames = make_frames()
+    song = make_song()
+    data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", song, CHARA)
+    info = struct.unpack_from("<8I", data, 0x180)
+    cfg_addr = info[6]
+    cfg = list(struct.unpack_from(f"<{mkpoc.PCHR_WORDS}I", data, cfg_addr - 0x02000000))
+    print(f"PCHR @ {cfg_addr:08x}: 基準日 {cfg[25]} 日目 (2000-01-01 から), コマンド {cfg[16]}個")
+
+    bus = PocBus(data)
+    cpu = ARM(bus)
+    bus.cpu = cpu
+    bus.ram[0xD8:0xDC] = struct.pack("<I", volume << 18)
+    bus.buttons = script
+    cpu.r[15] = struct.unpack_from("<I", data, 0x5C)[0]
+    cpu.r[13] = 0x12345678
+    swi_base = bus.swi
+
+    def swi(cpu, n):
+        if n == 0x0D:
+            cpu.r[0] = DATE
+            bus.swis.append((n, (), bus.tick()))
+        elif n == 0x0E:
+            cpu.r[0] = rtc(bus.tick())[1]
+            bus.swis.append((n, (), bus.tick()))
+        else:
+            swi_base(cpu, n)
+    bus.swi = swi
+
+    fiq_on, last_t, dac_by_tick, worst, broken = False, 0, {}, 0, set()
+    try:
+        while cpu.steps < 40_000_000:
+            cpu.step()
+            t = bus.tick()
+            if t != last_t:
+                last_t = t
+                fiq_on = bus.fiq_cb != 0 and _fiq_enabled(bus)
+                if fiq_on:
+                    out, w, br = run_fiq(cpu, bus, 260)
+                    dac_by_tick[t] = out
+                    worst = max(worst, w)
+                    broken |= set(br)
+        raise SystemExit("終了しませんでした")
+    except Halt as e:
+        if str(e) != "exit":
+            raise SystemExit(f"停止: {e}")
+
+    ok = True
+
+    def check(cond, msg):
+        nonlocal ok
+        print(("OK   " if cond else "NG   ") + msg)
+        ok &= bool(cond)
+
+    # 1tick に1回 VRAM の最後の行まで書く → draws[k] が now=k+1 の画面
+    dev = [list(v) for _, v in bus.draws]
+    dev_t = [t for t, _ in bus.draws]
+    check(dev_t[:5] == [1, 2, 3, 4, 5], f"毎tick 画面を書く (最初の tick {dev_t[:5]})")
+
+    # ---- 変換ツールのプレビュー (chara.js) と照合
+    n = dev_t[-1] + 2
+    steplen = struct.unpack_from("<I", song, 12)[0]
+    inp = {"cfg": cfg, "frames": frames, "song": {"count": 8, "steplen": steplen},
+           "buttons": [script(t) for t in range(n + 200)],
+           "rtc": [{"date": DATE, "time": rtc(t)[1]} for t in range(n + 200)]}
+    js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
+                                   capture_output=True, text=True, check=True).stdout)
+    js_fb = [j["fb"] for j in js if not j["exit"]]
+    mism = [k + 1 for k in range(min(len(dev), len(js_fb))) if dev[k] != js_fb[k]]
+    check(not mism and len(dev) == len(js_fb),
+          f"プレビュー (chara.js) と実機の画面が {len(dev)} tick すべて一致" + (f" (違う tick: {mism[:8]}, 長さ {len(dev)}/{len(js_fb)})" if mism or len(dev) != len(js_fb) else ""))
+    exit_js = [j["t"] for j in js if j["exit"]]
+    exit_dev = bus.swis[-1][2]
+    check(exit_js and abs(exit_js[0] - exit_dev) <= 1, f"終了する tick が一致 (実機 {exit_dev}, プレビュー {exit_js[:1]})")
+    check(559 + 89 <= exit_dev <= 559 + 92, f"3秒押し続けると終了 (tick {exit_dev}, 押し始め 560)")
+
+    def which(fb):
+        for i, f in enumerate(frames):
+            if fb == f:
+                return i
+        return None
+    face = {k + 1: which(v) for k, v in enumerate(dev)}
+    check(face[10] == 0, "最初は待機の顔 (コマ0)")
+    check(all(face[t] == 3 for t in range(20, 49)) and face[49] == 0, "右ボタン → 表情 (コマ3) → 1秒で待機の顔に戻る")
+    blinks = [t for t, f in face.items() if f == 1]
+    check(blinks and blinks[:4] == list(range(blinks[0], blinks[0] + 4)), f"まばたき (コマ1 を 4tick, 最初 tick {blinks[:1]})")
+
+    # 時計: 2回押しのあと 0.4 秒待ってから (コマンドの始まりと同じなので)
+    clock_ticks = [t for t in range(60, 150) if face[t] is None]
+    check(clock_ticks and clock_ticks[0] == 66 + 12 and len(clock_ticks) == 60, f"2回押し → 時計を2秒 (tick {clock_ticks[:1]}〜, {len(clock_ticks)} tick)")
+    big = read_big(dev[78 - 1], 9, [1, 8, 18, 25])
+    check(big == "1137", f"時計の時刻 = 11:37 (読み取り {big})")
+    small = read_small(dev[78 - 1], 1, [7, 11, 19, 23]) + read_small(dev[78 - 1], 22, [1, 5, 9, 13])
+    check(small == "10152026", f"日付 10/15 と 2026 年 (読み取り {small})")
+    check(read_letters(dev[78 - 1], 22, [21, 25, 29]) == "THU", "曜日 THU")
+
+    # コマンド → 曲
+    sing = [t for t in range(150, 230) if face[t] in (7, 8)]
+    check(sing and sing[0] == 180, f"コマンドを最後まで押すと曲の表情 (tick {sing[:1]})")
+    check({face[t] for t in sing} == {7, 8}, "曲の間は4分音符ごとに2つの表情を交互に")
+    end = sing[-1] + 1
+    total = 8 * steplen
+    check(face[end] == 0 and (end - 180) * 260 >= total, f"曲を最後まで鳴らしたら待機に戻る (tick {end}, 曲 {total} サンプル = {total / 260:.1f} tick)")
+    pcm = []
+    for t in range(181, end + 1):
+        pcm += dac_by_tick.get(t, [])
+    ref = render(song, len(pcm), 2 if volume == 1 else 0, loop=False)
+    got = [signed10(v) for v in pcm]
+    if volume == 2:
+        check(any(got), "消音設定でも曲は進む (DAC には書くが音は出さない)")
+        dacc = [v for a, v in bus.io_log if a == 0x0D800010]
+        check(dacc and dacc[-1] == 0, "消音設定では DAC を切ったまま")
+    else:
+        check(got == ref, f"曲の音が参照シンセ (1回だけ) と一致 ({len(got)} サンプル)")
+    check(got[total + 5:] == [0] * len(got[total + 5:]) and not any(dac_by_tick.get(t) for t in range(end + 2, 230)),
+          "曲のあとは無音・FIQ を止める")
+    check(worst < 120 and not broken, f"FIQ 1回の最大命令数 {worst}, 壊したレジスタ {sorted(broken)}")
+
+    # 長押し → 日数
+    days = [t for t in range(230, 330) if face[t] is None]
+    check(days and days[0] == 230 + 29, f"決定を1秒長押し → 日数 (tick {days[:1]})")
+    check(len(days) == 300 - days[0], f"日数の表示中にボタンを押すと待機に戻る ({len(days)} tick)")
+    num = read_big(dev[days[0] - 1], 12, [6, 13, 20])     # 3桁: 幅20 を中央に
+    check(num == "266", f"2026-01-22 から 2026-10-15 は 266 日 (読み取り {num})")
+    bg_row = dev[days[0] - 1][6]
+    check(bg_row == frames[6][6], "日数の背景にコマ6 を使う")
+
+    # 2回目のコマンド → 途中で決定 → 止める
+    sing2 = [t for t in range(420, 470) if face[t] in (7, 8)]
+    check(sing2 and sing2[0] == 450 and face[460] == 0, f"曲の途中で決定を押すと止まる (tick {sing2[:1]}〜{sing2[-1:] if sing2 else ''})")
+    check(face[472] == 0 and face[482] == 5, "表情なしのボタンは顔が変わらない・上ボタン1回は表情だけ")
+    fiq_regs = [s for s in bus.swis if s[0] == 0x01]
+    check(len(fiq_regs) >= 4 and bus.fiq_cb == 0, "曲のたびに FIQ を登録し、止めるときに解除")
+    check(not bus.byte_flash_reads, "フラッシュの8bit読み出し無し")
+    check(cpu.r[13] <= 0x800, "スタックがユーザRAM内")
+    icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
+    check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
+    if volume == 0:
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path):
+            check(cond, msg)
+    sys.exit(0 if ok else 1)
+
+
+def _fiq_enabled(bus):
+    on = False
+    for a, v in bus.io_log:
+        if a == 0x0A000008 and v & 0x2000:
+            on = True
+        if a == 0x0A00000C and v & 0x2000:
+            on = False
+    return on
+
+
+def read_big(fb, y, xs):
+    sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+    import genfont
+    glyphs = {ch: genfont.rows_bits(genfont.BIG[ch]) for ch in genfont.BIG_ORDER}
+    out = ""
+    for x in xs:
+        rows = [(fb[y + r] >> x) & 63 for r in range(10)]
+        out += next((ch for ch, g in glyphs.items() if g == rows), "?")
+    return out
+
+
+def read_small(fb, y, xs):
+    import genfont
+    glyphs = {ch: genfont.rows_bits(genfont.SMALL[ch].split("|")) for ch in "0123456789"}
+    return "".join(next((ch for ch, g in glyphs.items() if g == [(fb[y + r] >> x) & 7 for r in range(5)]), "?") for x in xs)
+
+
+def read_letters(fb, y, xs):
+    import genfont
+    glyphs = {ch: genfont.rows_bits(genfont.SMALL[ch].split("|")) for ch in genfont.SMALL_ORDER if ch.isalpha()}
+    return "".join(next((ch for ch, g in glyphs.items() if g == [(fb[y + r] >> x) & 7 for r in range(5)]), "?") for x in xs)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "build/player.bin", int(sys.argv[2]) if len(sys.argv) > 2 else 0)

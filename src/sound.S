@@ -26,6 +26,7 @@
     .equ S_GATELEN, 0x24
     .equ S_VOICE,   0x28
     .equ S_PHASE,   0x38
+    .equ S_LOOP,    0x48
 
     .section .text.snd_fiq, "ax"
     .global snd_fiq
@@ -79,6 +80,12 @@ snd_fiq:
     str     r11, [r12]
     bx      lr
 
+.Lend:
+    mov     r0, #0
+    str     r0, [r12, #S_ON]
+    .irp    i, 0, 1, 2, 3
+    str     r0, [r12, #(S_VOICE + \i * 4)]
+    .endr
 .Lsilent:
     mov     r0, #0
     ldr     r12, =DAC_DATA
@@ -86,6 +93,10 @@ snd_fiq:
     bx      lr
 
 .Lnext_step:
+    /* 1回だけ鳴らす曲が終わっていたら止める (remain=0 のまま次のステップに来た) */
+    ldr     r0, [r12, #S_REMAIN]
+    cmp     r0, #0
+    beq     .Lend
     /* 4音ぶん読む。0xFFFFFFFF (のばす) なら今の音を残す */
     ldr     r8, [r12, #S_PTR]
     .irp    i, 0, 1, 2, 3
@@ -93,11 +104,13 @@ snd_fiq:
     cmn     r9, #1
     strne   r9, [r12, #(S_VOICE + \i * 4)]
     .endr
-    ldr     r0, [r12, #S_REMAIN]
     subs    r0, r0, #1
-    ldreq   r8, [r12, #S_START]         /* 最後まで来たら先頭に戻る */
-    ldreq   r0, [r12, #S_COUNT]
-    str     r0, [r12, #S_REMAIN]
+    bne     1f
+    ldr     r9, [r12, #S_LOOP]
+    cmp     r9, #0
+    ldrne   r8, [r12, #S_START]         /* 最後まで来たら先頭に戻る (loop=1 のとき) */
+    ldrne   r0, [r12, #S_COUNT]
+1:  str     r0, [r12, #S_REMAIN]
     str     r8, [r12, #S_PTR]
     ldr     r0, [r12, #S_STEPLEN]
     str     r0, [r12, #S_LEFT]

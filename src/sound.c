@@ -8,6 +8,7 @@ struct snd_state snd;
 
 _Static_assert(__builtin_offsetof(struct snd_state, voice) == 0x28, "sound.S と並びを合わせる");
 _Static_assert(__builtin_offsetof(struct snd_state, phase) == 0x38, "sound.S と並びを合わせる");
+_Static_assert(__builtin_offsetof(struct snd_state, loop) == 0x48, "sound.S と並びを合わせる");
 
 /* PMUS ヘッダ (32バイト) */
 #define PMUS_MAGIC    0x53554D50u   /* "PMUS" */
@@ -34,6 +35,7 @@ int snd_init(const u32 *music)
     snd.remain  = steps;
     snd.left    = 1;        /* 最初のサンプルでステップ0を読む */
     snd.gate    = 0;
+    snd.loop    = 1;
     for (int i = 0; i < SND_VOICES; i++) {
         snd.voice[i] = 0;
         snd.phase[i] = 0;

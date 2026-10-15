@@ -10,18 +10,12 @@
  *
  * フレームデータと曲データは Body 末尾に付け足され、anim_info に場所が入る
  * (crt0.S と tools/mkpoc.py を参照)。
+ * anim_info にキャラクターモードの設定があれば chara.c の chara_main を動かす。
  */
 #include "poc.h"
 #include "sound.h"
+#include "app.h"
 
-/* crt0.S の .pocinfo。フラッシュ上なので必ず 32bit で読む */
-extern const u32 anim_info[8];
-#define INFO_FRAMES  2
-#define INFO_COUNT   3
-#define INFO_DELAY   4
-#define INFO_MUSIC   5   /* 曲データ (PMUS) のアドレス, 0=曲なし */
-
-#define TICK_HZ      30
 #define HOLD_EXIT    (TICK_HZ * 2)   /* 2秒長押しで終了 */
 #define DELAY_MIN    1
 #define DELAY_MAX    30
@@ -31,17 +25,18 @@ static const u32 test_pattern_row[2] = { 0x00FF00FFu, 0xFF00FF00u };
 
 /* ---- 30Hz のタイマ (Timer0 を割り込みなしでポーリング) ----
  * CPU 3.99MHz (速度7) / 512 = 7808Hz → 260 カウントで約 30.03Hz */
-static void timer_init(void)
+static u32 last_count;
+
+void timer_init(void)
 {
     swi_set_cpu_speed(7);
     T0_MODE   = 0;                 /* 停止中でないと RELOAD が書けない */
     T0_RELOAD = 7808 / TICK_HZ - 1;
     T0_MODE   = TMODE_DIV512 | TMODE_ENABLE;
+    last_count = T0_COUNT & 0xFFFFu;
 }
 
-static u32 last_count;
-
-static void wait_tick(void)
+void wait_tick(void)
 {
     for (;;) {
         u32 c = T0_COUNT & 0xFFFFu;
@@ -53,7 +48,7 @@ static void wait_tick(void)
     }
 }
 
-static void lcd_update_mode(void)
+void lcd_update_mode(void)
 {
     u32 mode = LCDM_ON | LCDM_CPEN | LCDM_32HZ;
     if (INT_INPUT & IN_DOCKED)     /* PS本体に挿すと向きが逆になる */
@@ -61,7 +56,7 @@ static void lcd_update_mode(void)
     LCD_MODE = mode;
 }
 
-static void lcd_draw(const u32 *frame, u32 invert)
+void lcd_draw(const u32 *frame, u32 invert)
 {
     volatile u32 *vram = LCD_VRAM;
     for (u32 y = 0; y < 32; y++)
@@ -77,6 +72,10 @@ static void lcd_draw_test(u32 invert)
 
 int main(void)
 {
+    /* キャラクターモードの設定があればそちらを動かす (chara.c) */
+    if (anim_info[INFO_CHARA])
+        return chara_main((const u32 *)anim_info[INFO_CHARA]);
+
     const u32 *frames = (const u32 *)anim_info[INFO_FRAMES];
     u32 count = anim_info[INFO_COUNT];
     u32 delay = anim_info[INFO_DELAY];

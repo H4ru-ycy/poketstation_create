@@ -58,22 +58,26 @@ def compile_song(bpm, steps, tracks):
     return out
 
 
-def render(pmu, n, shift=0):
-    """sound.S の snd_fiq と同じ手順で n サンプル作る (DAC に書く値 = 返り値 << 6)"""
+def render(pmu, n, shift=0, loop=True):
+    """sound.S の snd_fiq と同じ手順で n サンプル作る (DAC に書く値 = 返り値 << 6)
+    loop=False: 1回だけ鳴らす (曲のあとには 0 のステップが1つ続いているものとする)"""
     steps, steplen, gatelen = struct.unpack_from("<III", pmu, 8)
-    data = [struct.unpack_from("<4I", pmu, 32 + i * 16) for i in range(steps)]
+    data = [struct.unpack_from("<4I", pmu, 32 + i * 16) for i in range(steps)] + [(0, 0, 0, 0)]
     voice, phase = [0] * 4, [0] * 4
     ptr, remain, left, gate = 0, steps, 1, 0
     out = []
     for _ in range(n):
         left -= 1
+        if left == 0 and remain == 0:          # 1回だけの曲が終わった
+            out.extend([0] * (n - len(out)))
+            return out
         if left == 0:
             for i, w in enumerate(data[ptr]):
                 if w != HOLD:
                     voice[i] = w
             ptr += 1
             remain -= 1
-            if remain == 0:
+            if remain == 0 and loop:
                 ptr, remain = 0, steps
             left, gate = steplen, gatelen
         if gate:

@@ -35,11 +35,12 @@ struct snd_state {
     u32 gatelen;    /* 24 ステップ先頭から音を切るまでのサンプル数 */
     u32 voice[SND_VOICES];  /* 28 今鳴っている音のワード */
     u32 phase[SND_VOICES];  /* 38 位相 (上位8bitが波形の位置) */
+    u32 loop;       /* 48 1=最後まで来たら先頭に戻る, 0=1回だけ鳴らして on を 0 にする */
 };
 
 extern struct snd_state snd;
 
-/* 曲データ (PMUS) が正しければ準備して 1、無ければ 0 */
+/* 曲データ (PMUS) が正しければ準備して 1 (消音設定なら 2)、無ければ 0。loop は 1 になる */
 int  snd_init(const u32 *music);
 void snd_start(void);   /* タイマ2・FIQ・DAC を有効にする */
 void snd_stop(void);    /* すべて止める (GUI に戻る前に必ず呼ぶ) */

@@ -85,6 +85,22 @@ static inline volatile u32 *swi_get_alarm_setting(void)
     return (volatile u32 *)r0;
 }
 
+/* GetBcdDate: bit0-7 日, bit8-15 月, bit16-23 年 (下2桁), bit24-31 世紀 (すべてBCD) */
+static inline u32 swi_get_bcd_date(void)
+{
+    register u32 r0 __asm__("r0");
+    __asm__ volatile("swi 0x0D" : "=r"(r0) : : "memory", "lr");
+    return r0;
+}
+
+/* GetBcdTime: bit0-7 秒, bit8-15 分, bit16-23 時 (BCD), bit24-31 曜日 (1=日曜 … 7=土曜) */
+static inline u32 swi_get_bcd_time(void)
+{
+    register u32 r0 __asm__("r0");
+    __asm__ volatile("swi 0x0E" : "=r"(r0) : : "memory", "lr");
+    return r0;
+}
+
 static inline u32 swi_prepare_execute(u32 flag, u32 dir_index, u32 param)
 {
     register u32 r0 __asm__("r0") = flag;

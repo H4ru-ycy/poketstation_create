@@ -36,6 +36,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--ink);
   font-family: var(--font-body); font-size: 15px; line-height: 1.6;
@@ -48,15 +49,33 @@ body {
 .top h1 .led { display: inline-block; width: 0.32em; height: 0.32em; border-radius: 50%; background: var(--accent); vertical-align: 0.4em; margin-left: 0.25em; box-shadow: 0 0 8px var(--accent); }
 .spec { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
 
-.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "midi" "score" "export" "help"; }
+.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "chara" "import" "edit" "music" "midi" "score" "export" "help"; }
 @media (min-width: 900px) {
-  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "midi midi" "score score" "export help"; align-items: start; }
+  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "chara chara" "music music" "midi midi" "score score" "export help"; align-items: start; }
 }
 .music { grid-area: music; }
 .bpm-row { display: flex; gap: 10px; align-items: center; }
 .bpm-row input[type=number] { width: 5.5em; flex: none; font-variant-numeric: tabular-nums; font-size: 16px; }
 .bpm-row input[type=range] { flex: 1 1 auto; min-width: 0; }
 .score { grid-area: score; }
+.chara { grid-area: chara; }
+.pad { display: grid; grid-template-columns: repeat(3, 56px) 1fr 76px; grid-template-rows: repeat(3, 44px); gap: 6px; align-items: center; justify-items: center; width: min(100%, 340px); margin-inline: auto; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pad button { width: 100%; height: 100%; min-height: 0; padding: 0; font-size: 18px; border-radius: 10px; background: #3a4046; color: #e9edf0; border-color: #4a5158; -webkit-touch-callout: none; }
+.pad button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pad .b-up { grid-column: 2; grid-row: 1; } .pad .b-left { grid-column: 1; grid-row: 2; } .pad .b-right { grid-column: 3; grid-row: 2; } .pad .b-down { grid-column: 2; grid-row: 3; }
+.pad .b-fire { grid-column: 5; grid-row: 2; border-radius: 50%; height: 64px; width: 64px; font-size: 14px; }
+.chara-grid { display: grid; gap: 10px 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.face-row { display: grid; grid-template-columns: 5.2em minmax(0, 1fr) 40px; gap: 8px; align-items: center; }
+.face-row label { font-size: 13px; color: var(--muted); }
+.face-row canvas { width: 40px; height: 40px; image-rendering: pixelated; border-radius: 3px; }
+.faces { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.cmd-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cmd-row .icon { min-width: 42px; }
+.cmd-show { min-height: 38px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 10px; border: 1px dashed var(--line); border-radius: 8px; font-family: var(--font-display); font-size: 18px; flex: 1 1 160px; }
+.cmd-show:empty::before { content: "まだありません"; color: var(--muted); font-family: var(--font-body); font-size: 13px; }
+.warn { margin: 0; padding-left: 1.2em; font-size: 13px; color: var(--accent); }
+.warn:empty { display: none; }
+.mode-label { font-family: var(--font-body); font-size: 12.5px; }
 .midi { grid-area: midi; }
 .midi-body { display: grid; gap: 14px; min-width: 0; }
 .midi-ov-wrap { display: grid; gap: 6px; min-width: 0; }
@@ -143,7 +162,7 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--surface); bor
 .field { display: grid; gap: 4px; min-width: 0; }
 .field label { font-size: 12.5px; color: var(--muted); letter-spacing: 0.03em; display: flex; justify-content: space-between; gap: 8px; }
 .field label output { color: var(--ink); font-variant-numeric: tabular-nums; }
-select, input[type=text], input[type=number] { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 38px; width: 100%; min-width: 0; }
+select, input[type=text], input[type=number], input[type=date] { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 38px; width: 100%; min-width: 0; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 .field label.check, .check { display: flex; justify-content: flex-start; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); min-height: 38px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
@@ -182,7 +201,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .roll-inner { display: flex; width: max-content; }
 #rollKeys { position: sticky; left: 0; z-index: 2; display: block; border-right: 1px solid var(--line); }
 .roll-area { position: relative; }
-#roll { display: block; cursor: pointer; }
+#roll { display: block; cursor: pointer; position: absolute; top: 0; left: 0; }
 .playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); pointer-events: none; will-change: transform; }
 textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; resize: vertical; }
 .subpanel { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; min-width: 0; }
@@ -194,6 +213,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
 .syntax code, .note code { color: var(--ink); }
 .msg { font-size: 13px; color: var(--accent); margin: 0; }
 .msg:empty { display: none; }
+#barsHint.over { color: var(--accent); }
 @media (max-width: 600px) {
   .wide-sm { grid-column: 1 / -1; }
   .tab { padding: 8px 9px; }
@@ -227,8 +247,16 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         <div class="device-row"><span>POCKETSTATION</span><span class="device-led" id="led" aria-hidden="true"></span></div>
         <div class="lcd-frame"><canvas id="lcd" width="352" height="352" aria-label="ポケステ液晶のプレビュー"></canvas></div>
         <div class="device-row"><span class="count" id="count">1 / 1</span><span id="fps">7.5 fps</span></div>
+        <div class="pad" id="pad" hidden aria-label="ポケステのボタン">
+          <button type="button" class="b-up" data-b="16" aria-label="上">▲</button>
+          <button type="button" class="b-left" data-b="4" aria-label="左">◀</button>
+          <button type="button" class="b-right" data-b="2" aria-label="右">▶</button>
+          <button type="button" class="b-down" data-b="8" aria-label="下">▼</button>
+          <button type="button" class="b-fire" data-b="1" aria-label="決定">決定</button>
+        </div>
       </div>
-      <div class="controls">
+      <p class="note" id="charaPrevNote" hidden>キャラクターモードの試し: 下のボタンをタップ・2回タップ・長押しして動きを確かめられます。時計はこの端末の時刻です。</p>
+      <div class="controls" id="animControls">
         <button id="play" class="primary" type="button">一時停止</button>
         <div class="speed">
           <button id="slower" class="icon" type="button" aria-label="遅く">−</button>
@@ -281,6 +309,81 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       </div>
     </section>
 
+    <!-- キャラクターモード -->
+    <section class="chara panel" id="charaPanel" aria-label="キャラクターモード">
+      <h2>キャラクターモード <small>顔のアップ・表情・時計・日数・曲をボタンで</small></h2>
+      <label class="check" for="charaOn"><input id="charaOn" type="checkbox"> アニメ再生の代わりに、キャラクターモードで書き出す</label>
+      <div id="charaBody" hidden class="midi-body">
+        <p class="note">コマ (上のコマ列の絵) を、表情や背景に割り当てます。顔の絵は「画像から変換」や「ドット編集」で作ってください。</p>
+        <div class="subpanel">
+          <h3>表情</h3>
+          <div class="row"><button type="button" id="charaSample">見本の顔を入れて試す</button><span class="note">シンプルな顔のコマを7枚足して割り当てます。自分の絵に入れ替えて使ってください。</span></div>
+          <div class="faces" id="charaFaces"></div>
+        </div>
+        <div class="subpanel">
+          <h3>曲の間の表示 <small>コマンドで曲を鳴らしている間</small></h3>
+          <div class="field"><label for="singMode">表示のしかた</label>
+            <select id="singMode"><option value="faces">表情2枚を交互に (4分音符ごと)</option><option value="image">1枚の画像</option><option value="anim">アニメーション (コマを順に)</option></select></div>
+          <div class="faces" id="singRows"></div>
+          <div id="singAnim" class="midi-body" hidden>
+            <div class="chara-grid">
+              <div class="field"><label for="singFirst">最初のコマ</label><select id="singFirst"></select></div>
+              <div class="field"><label for="singCount">コマ数</label><input id="singCount" type="number" min="1" max="999" value="4" inputmode="numeric"></div>
+              <div class="field"><label for="singSync">速さ</label>
+                <select id="singSync"><option value="1">曲に合わせる: 16分音符ごと</option><option value="2">曲に合わせる: 8分音符ごと</option><option value="3">曲に合わせる: 4分音符ごと</option><option value="4">曲に合わせる: 2分音符ごと</option><option value="0">時間で: 下の秒数ごと</option></select></div>
+              <div class="field" id="singDelayField"><label for="singDelay">1コマの時間 <output id="singDelayOut">4/30秒</output></label><input id="singDelay" type="range" min="1" max="30" value="4"></div>
+            </div>
+            <div class="conv-preview" id="singStrip"></div>
+          </div>
+          <div class="row"><button type="button" id="singUseLast" disabled>最後に「画像から変換」で足したコマをアニメにする</button></div>
+          <p class="note">GIFや連番の画像を「画像から変換」→「コマを末尾に追加」で入れてから、このボタンを押すと、そのコマが曲の間のアニメになります。</p>
+        </div>
+        <div class="subpanel">
+          <h3>操作 <small>使うボタンは変えられます</small></h3>
+          <div class="chara-grid">
+            <div class="field"><label for="charaDbl">すばやく2回押す → 日付と時計</label><select id="charaDbl" data-btnsel></select></div>
+            <div class="field"><label for="charaLong">長押し → 基準日からの日数</label><select id="charaLong" data-btnsel></select></div>
+          </div>
+          <div class="field">
+            <label>コマンド (この順に押す) → 曲を最後まで鳴らして待機に戻る</label>
+            <div class="cmd-row">
+              <div class="cmd-show" id="charaCmdShow" aria-live="polite"></div>
+              <button type="button" class="icon" data-cmd="up" aria-label="上を足す">▲</button>
+              <button type="button" class="icon" data-cmd="down" aria-label="下を足す">▼</button>
+              <button type="button" class="icon" data-cmd="left" aria-label="左を足す">◀</button>
+              <button type="button" class="icon" data-cmd="right" aria-label="右を足す">▶</button>
+              <button type="button" data-cmd="fire">決定</button>
+              <button type="button" id="charaCmdBack">1つ消す</button>
+            </div>
+            <p class="note">8個まで。曲は作曲パネルの曲を使います。曲の途中で決定を押すと止まります。</p>
+          </div>
+          <p class="note">どのボタンでも3秒押し続けると、ポケステの時計画面に戻ります。</p>
+          <ul class="warn" id="charaWarn"></ul>
+          <p class="note" id="charaInfo"></p>
+        </div>
+        <div class="subpanel">
+          <h3>日数 <small>基準日の当日から何日たったか</small></h3>
+          <div class="chara-grid">
+            <div class="field"><label for="charaBase">基準日</label><input id="charaBase" type="date" value="2026-01-22"></div>
+            <div class="field"><label for="charaFrom">数え方</label><select id="charaFrom"><option value="0">当日を0日 (◯日たった)</option><option value="1">当日を1日目 (◯日目)</option></select></div>
+            <div class="field"><label for="charaDaysY">数字の高さ <output id="charaDaysYOut">12</output></label><input id="charaDaysY" type="range" min="0" max="22" value="12"></div>
+          </div>
+          <p class="note">初期値の 2026年1月22日 は、『超かぐや姫！』のNetflix配信開始日です。</p>
+          <div class="row"><button type="button" id="charaMakeBg">日数画面の背景を作る (「公開から」「日」)</button></div>
+        </div>
+        <details class="subpanel">
+          <summary class="note">細かい設定 (時間)</summary>
+          <div class="chara-grid">
+            <div class="field"><label for="charaHold">表情を戻すまで (秒)</label><input id="charaHold" type="number" min="0.2" max="30" step="0.1" value="2" inputmode="decimal"></div>
+            <div class="field"><label for="charaShow">時計・日数を出す時間 (秒)</label><input id="charaShow" type="number" min="1" max="60" step="0.5" value="5" inputmode="decimal"></div>
+            <div class="field"><label for="charaDblWin">2回押しの間隔 (秒まで)</label><input id="charaDblWin" type="number" min="0.1" max="1.5" step="0.05" value="0.4" inputmode="decimal"></div>
+            <div class="field"><label for="charaLongTime">長押しの時間 (秒)</label><input id="charaLongTime" type="number" min="0.3" max="2.5" step="0.1" value="1" inputmode="decimal"></div>
+            <div class="field"><label for="charaGap">コマンドのボタンの間隔 (秒まで)</label><input id="charaGap" type="number" min="0.3" max="3" step="0.1" value="1" inputmode="decimal"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
     <!-- ドット編集 -->
     <section class="edit panel" aria-label="ドット編集">
       <h2>ドット編集 <small id="edLabel">コマ 1</small></h2>
@@ -316,7 +419,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       <div class="fields">
         <div class="field"><label for="bpmNum">テンポ (BPM・40〜240)</label>
           <div class="bpm-row"><input id="bpmNum" type="number" min="40" max="240" step="1" value="120" inputmode="numeric" enterkeyhint="done"><input id="bpm" type="range" min="40" max="240" value="120" aria-label="テンポ (スライダー)"></div></div>
-        <div class="field"><label for="bars">長さ (4分の4拍子)</label><select id="bars"></select></div>
+        <div class="field"><label for="bars">長さ (小節・4分の4拍子)</label><input id="bars" type="number" min="1" max="999" value="4" inputmode="numeric" enterkeyhint="done"><small class="note" id="barsHint"></small></div>
         <div class="field"><label for="key">調 (ハモリの音階)</label><select id="key"></select></div>
       </div>
 
@@ -390,7 +493,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         <div class="field"><label for="omrBpm">テンポ (BPM)</label><input id="omrBpm" type="number" min="40" max="240" value="120" inputmode="numeric"></div>
         <div class="field"><label for="omrMeter">拍子</label>
           <select id="omrMeter"><option value="0">自動</option><option value="16">4/4</option><option value="12">3/4</option><option value="8">2/4</option><option value="12">6/8</option><option value="24">6/4・12/8</option></select></div>
-        <div class="field"><label for="omrFrom">作曲パネルに入れる範囲</label><select id="omrFrom"><option value="0">1小節目から</option></select></div>
+        <div class="field"><label for="omrFrom">作曲パネルに入れる始まり</label><select id="omrFrom"><option value="0">1小節目から</option></select></div>
       </div>
       <div class="row"><button id="omrRun" class="primary" type="button" disabled>読み取る</button><span class="note" id="omrStatus" role="status"></span></div>
 
@@ -427,7 +530,8 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         <div class="fields">
           <div class="field"><label for="midiStart">はじめ (小節)</label><input id="midiStart" type="number" min="1" value="1" inputmode="numeric"></div>
           <div class="field"><label for="midiBeat">はじめ (拍)</label><select id="midiBeat"></select></div>
-          <div class="field"><label for="midiLen">長さ (小節・32まで)</label><input id="midiLen" type="number" min="1" max="32" value="8" inputmode="numeric"></div>
+          <div class="field"><label for="midiLen">長さ (小節)</label><input id="midiLen" type="number" min="1" value="8" inputmode="numeric"></div>
+          <div class="field" style="align-self:end"><button id="midiToEnd" type="button">曲の終わりまで</button></div>
           <div class="field"><label for="midiBpm">テンポ (BPM)</label><input id="midiBpm" type="number" min="40" max="240" value="120" inputmode="numeric"></div>
         </div>
         <p class="note" id="midiRange"></p>
@@ -483,13 +587,23 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
     <section class="help panel" aria-label="使い方">
       <h2>ポケステでの動かし方</h2>
       <details open>
-        <summary>本体の操作</summary>
+        <summary>本体の操作 (アニメ再生)</summary>
         <dl class="keys">
           <dt>決定 (短押し)</dt><dd>一時停止 / 再開</dd>
           <dt>決定 (2秒長押し)</dt><dd>時計画面に戻る</dd>
           <dt>右 / 左</dt><dd>アニメを速く / 遅く</dd>
           <dt>上</dt><dd>白黒反転</dd>
           <dt>下</dt><dd>再生中は曲を鳴らす / 止める、一時停止中は1コマ送り</dd>
+        </dl>
+      </details>
+      <details>
+        <summary>本体の操作 (キャラクターモード)</summary>
+        <dl class="keys">
+          <dt>押す</dt><dd>表情が変わる</dd>
+          <dt>2回押し</dt><dd>日付と時計 (どのボタンかは設定で選ぶ)</dd>
+          <dt>長押し</dt><dd>基準日からの日数</dd>
+          <dt>コマンド</dt><dd>曲を最後まで鳴らして待機に戻る (決定で止める)</dd>
+          <dt>3秒押す</dt><dd>時計画面に戻る</dd>
         </dl>
       </details>
       <details>
@@ -1505,12 +1619,242 @@ if (typeof module !== "undefined") module.exports = OMR;
 
 </script>
 <script>
+/* font.js - tools/genfont.py で作成 (手で直さないこと) */
+const FONT_BIG_ORDER = '0123456789-';
+const FONT_BIG = [869219550, 516898035, 204534668, 1060160268, 415435998, 1057763724, 482544862, 516885552, 460187416, 409044543, 813445375, 516885552, 520895710, 516898035, 409144383, 204522252, 516898014, 516898035, 869219550, 516885566, 1056964608, 63];
+const FONT_SMALL_ORDER = '0123456789ADEFHIMNORSTUW/:- ';
+const FONT_SMALL = [31599, 29850, 29671, 31143, 18925, 31183, 31695, 9511, 31727, 31215, 23530, 15211, 29391, 4815, 23533, 29847, 23549, 23403, 11114, 23275, 14478, 9367, 31597, 24557, 4772, 1040, 448, 0];
+
+/* ============================================================
+ * chara.js - キャラクターモードの動き (src/chara.c と同じ手順)
+ *   変換ツールのプレビューと、tests/test_chara.py の照合に使う。
+ *   CharaEngine(cfg, frames, song) → { tick(buttons, rtc) }
+ *     cfg    : PCHR ブロックのワード配列 (34個)
+ *     frames : [Uint32Array(32), ...] (bit0=左, 1=黒)
+ *     song   : { count, steplen } (曲が無ければ null)
+ *     rtc    : { date, time } = SWI 0Dh / 0Eh と同じ BCD の値
+ *   tick() は 1/30 秒ごとに呼ぶ。戻り値 { fb, exit, event, singStart }
+ *     event: "sing" (曲を鳴らし始める) / "stop" (曲を止める) / null
+ * ============================================================ */
+const PCHR = {
+  MAGIC: 0, VERSION: 1, IDLE: 2, BLINK: 3, FACE: 4, FACE_HOLD: 9, CLOCK_BG: 10, DAYS_BG: 11,
+  SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
+  DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32,
+  SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38, WORDS: 40,
+};
+const CHARA_NONE = 0xFFFFFFFF;
+const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
+const SAMPLES_PER_TICK = 260;   /* 7808Hz ÷ 30Hz (タイマ0 の 260 カウント) */
+
+function CharaEngine(cfg, frames, song) {
+  const count = frames.length;
+  const fb = new Uint32Array(32);
+  const S = { A: 10, D: 11, E: 12, F: 13, H: 14, I: 15, M: 16, N: 17, O: 18, R: 19, S: 20, T: 21, U: 22, W: 23, SLASH: 24, COLON: 25, MINUS: 26 };
+  const WEEK = [[S.S, S.U, S.N], [S.M, S.O, S.N], [S.T, S.U, S.E], [S.W, S.E, S.D], [S.T, S.H, S.U], [S.F, S.R, S.I], [S.S, S.A, S.T]];
+  const MONTH = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  const BIG_MINUS = 10, BIG_H = 10;
+
+  const fbFrame = (idx) => { for (let y = 0; y < 32; y++) fb[y] = idx < count ? frames[idx][y] : 0; };
+  function clearRect(x, y, w, h) {
+    if (x < 0) { w += x; x = 0; }
+    if (x + w > 32) w = 32 - x;
+    if (w <= 0) return;
+    const m = ((w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1) << x) >>> 0;
+    for (let r = y; r < y + h; r++) if (r >= 0 && r < 32) fb[r] = (fb[r] & ~m) >>> 0;
+  }
+  function putSmall(x, y, ch) {
+    const w = FONT_SMALL[ch];
+    for (let r = 0; r < 5; r++) if (y + r >= 0 && y + r < 32 && x >= 0 && x <= 29) fb[y + r] = (fb[y + r] | (((w >> (3 * r)) & 7) << x)) >>> 0;
+  }
+  function putBig(x, y, ch) {
+    const w0 = FONT_BIG[ch * 2], w1 = FONT_BIG[ch * 2 + 1];
+    for (let r = 0; r < 10; r++) {
+      const bits = (r < 5 ? (w0 >>> (6 * r)) : (w1 >>> (6 * (r - 5)))) & 63;
+      if (y + r >= 0 && y + r < 32 && x >= 0 && x <= 26) fb[y + r] = (fb[y + r] | (bits << x)) >>> 0;
+    }
+  }
+  const bcd = (b) => (b >> 4) * 10 + (b & 15);
+  function toDigits(v) {
+    if (v > 99999) v = 99999;
+    const d = [];
+    for (const p of [10000, 1000, 100, 10, 1]) { let k = 0; while (v >= p) { v -= p; k++; } if (k || d.length || p === 1) d.push(k); }
+    return d;
+  }
+  function dayNumber(y, m, d) {
+    let n = 0;
+    for (let yy = 2000; yy < y; yy++) n += (yy & 3) ? 365 : 366;
+    n += MONTH[m - 1] + d - 1;
+    if (m > 2 && (y & 3) === 0) n++;
+    return n;
+  }
+  function drawClock(rtc) {
+    const date = rtc.date >>> 0, time = rtc.time >>> 0;
+    fbFrame(cfg[PCHR.CLOCK_BG]);
+    const mon = (date >>> 8) & 0xFF, day = date & 0xFF;
+    clearRect(0, 0, 32, 7);
+    putSmall(7, 1, mon >> 4); putSmall(11, 1, mon & 15); putSmall(15, 1, S.SLASH); putSmall(19, 1, day >> 4); putSmall(23, 1, day & 15);
+    const hh = (time >>> 16) & 0xFF, mm = (time >>> 8) & 0xFF, ss = time & 0xFF;
+    clearRect(0, 8, 32, 12);
+    putBig(1, 9, hh >> 4); putBig(8, 9, hh & 15); putBig(18, 9, mm >> 4); putBig(25, 9, mm & 15);
+    if ((ss & 1) === 0) for (const r of [11, 12, 15, 16]) fb[r] = (fb[r] | (3 << 15)) >>> 0;
+    const cen = (date >>> 24) & 0xFF, yr = (date >>> 16) & 0xFF;
+    clearRect(0, 21, 32, 11);
+    putSmall(1, 22, cen >> 4); putSmall(5, 22, cen & 15); putSmall(9, 22, yr >> 4); putSmall(13, 22, yr & 15);
+    const wd = (time >>> 24) & 0xFF;
+    if (wd >= 1 && wd <= 7) { const nm = WEEK[wd - 1]; putSmall(21, 22, nm[0]); putSmall(25, 22, nm[1]); putSmall(29, 22, nm[2]); }
+    let len = (bcd(ss) + 2) >> 1; if (len > 30) len = 30;
+    const bar = ((((1 << len) >>> 0) - 1) << 1) >>> 0;
+    fb[29] = (fb[29] | bar) >>> 0;
+    fb[30] = (fb[30] | (0x15555554 & ~bar)) >>> 0;
+  }
+  function drawDays(rtc) {
+    const date = rtc.date >>> 0;
+    const y = bcd((date >>> 24) & 0xFF) * 100 + bcd((date >>> 16) & 0xFF), m = bcd((date >>> 8) & 0xFF), d = bcd(date & 0xFF);
+    fbFrame(cfg[PCHR.DAYS_BG]);
+    const ny = cfg[PCHR.DAYS_Y] | 0;
+    let dig;
+    if (y < 2000 || y > 2099 || m < 1 || m > 12 || d < 1) dig = [BIG_MINUS, BIG_MINUS];
+    else { const v = dayNumber(y, m, d) - cfg[PCHR.BASE_DAY] + cfg[PCHR.DAY_OFFSET]; dig = toDigits(v < 0 ? 0 : v); }
+    const n = dig.length;
+    if (n <= 4) {
+      const w = n * 7 - 1, x = Math.trunc((32 - w) / 2);
+      clearRect(x - 1, ny - 1, w + 2, BIG_H + 2);
+      dig.forEach((v, i) => putBig(x + i * 7, ny, v));
+    } else {
+      const w = n * 4 - 1, x = Math.trunc((32 - w) / 2);
+      clearRect(x - 1, ny + 1, w + 2, 7);
+      dig.forEach((v, i) => putSmall(x + i * 4, ny + 2, v));
+    }
+  }
+
+  // 状態 (chara.c の chara_main のローカル変数と同じ)
+  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3;
+  const cmdLen = Math.min(8, cfg[PCHR.CMD_LEN]);
+  let now = 0, mode = IDLE, modeT = 0, face = cfg[PCHR.IDLE], faceT = 0;
+  let blinkT = 0, blinkNext = 100, blinkOn = 0;
+  let prev = 0, hold = 0, longT = 0, longDone = 0, pending = 0;
+  let singing = 0, singAt = 0;
+  let animIdx = 0, animWait = 0, animK = 0, singT0 = 0;
+  const histB = [], histT = [];
+  const histPush = (b, t) => { if (histB.length === 8) { histB.shift(); histT.shift(); } histB.push(b); histT.push(t); };
+  const histClear = () => { histB.length = 0; histT.length = 0; };
+  function histMatches(k) {
+    if (k === 0 || k > histB.length) return false;
+    const base = histB.length - k;
+    for (let i = 0; i < k; i++) {
+      if (histB[base + i] !== cfg[PCHR.CMD + i]) return false;
+      if (i && histT[base + i] - histT[base + i - 1] > cfg[PCHR.CMD_GAP]) return false;
+    }
+    return true;
+  }
+  function cmdInProgress() { for (let k = cfg[PCHR.CMD_LEN] - 1; k >= 1 && k < 8; k--) if (histMatches(k)) return true; return false; }
+  // 曲の進み具合 (FIQ が 1tick に 260 サンプル進める)
+  function songState() {
+    const el = (now - singAt) * SAMPLES_PER_TICK, total = song.count * song.steplen;
+    const reads = el < 1 ? 0 : Math.min(song.count, Math.floor((el - 1) / song.steplen) + 1);
+    return { reads, done: el >= total + 1 };
+  }
+
+  function tick(btn, rtc) {
+    let event = null;
+    now++;
+    btn &= 0x1F;
+    const down = btn & ~prev;
+    hold = (btn && btn === prev) ? hold + 1 : (btn ? 1 : 0);
+    prev = btn;
+    if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
+    if (cfg[PCHR.LONG_BTN] && (btn & cfg[PCHR.LONG_BTN])) {
+      if (++longT >= cfg[PCHR.LONG] && !longDone) {
+        longDone = 1;
+        if (mode === IDLE) { mode = DAYS; modeT = cfg[PCHR.SHOW]; pending = 0; histClear(); }
+      }
+    } else { longT = 0; longDone = 0; }
+    for (let b = 1; b <= 16; b <<= 1) {
+      if (!(down & b)) continue;
+      if (mode === SING) {
+        if (b === 1) { if (singing) event = "stop"; singing = 0; mode = IDLE; face = cfg[PCHR.IDLE]; }
+        continue;
+      }
+      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
+      histPush(b, now);
+      if (cmdLen && histMatches(cmdLen)) {
+        histClear(); pending = 0;
+        mode = SING; modeT = cfg[PCHR.SHOW];
+        animIdx = 0; animWait = 0; animK = 0; singT0 = now;
+        if (song) { singing = 1; singAt = now; event = "sing"; }
+        continue;
+      }
+      const f = cfg[PCHR.FACE + [1, 2, 4, 8, 16].indexOf(b)];
+      if (f < count) { face = f; faceT = cfg[PCHR.FACE_HOLD]; }
+      const n = histB.length;
+      if (pending) pending = 0;
+      else if (b === cfg[PCHR.DBL_BTN] && n >= 2 && histB[n - 2] === b && now - histT[n - 2] <= cfg[PCHR.DBL_WIN]) {
+        if (cmdLen && cmdInProgress()) pending = now + cfg[PCHR.DBL_WIN];
+        else { mode = CLOCK; modeT = cfg[PCHR.SHOW]; histClear(); }
+      }
+    }
+    if (pending && now >= pending) { pending = 0; histClear(); if (mode === IDLE) { mode = CLOCK; modeT = cfg[PCHR.SHOW]; } }
+
+    if (mode === CLOCK || mode === DAYS) {
+      if (mode === CLOCK) drawClock(rtc); else drawDays(rtc);
+      if (--modeT === 0) mode = IDLE;
+    } else if (mode === SING) {
+      const st = singing ? songState() : null;
+      const first = cfg[PCHR.SING_FIRST];
+      let n = cfg[PCHR.SING_COUNT];
+      if (cfg[PCHR.VERSION] >= 2 && cfg[PCHR.SING_MODE] === 1 && n && first < count) {
+        if (first + n > count) n = count - first;
+        const sync = cfg[PCHR.SING_SYNC];
+        if (sync) {
+          const k = singing ? (st.reads >> (sync - 1)) : ((now - singT0) >> 3);
+          while (animK < k) { animK++; if (++animIdx >= n) animIdx = 0; }
+        } else if (animWait++ >= cfg[PCHR.SING_DELAY] && cfg[PCHR.SING_DELAY]) {
+          animWait = 1;
+          if (++animIdx >= n) animIdx = 0;
+        }
+        fbFrame(first + animIdx);
+      } else {
+        const fa = cfg[PCHR.SING_A] < count ? cfg[PCHR.SING_A] : cfg[PCHR.IDLE];
+        const fbb = cfg[PCHR.SING_B] < count ? cfg[PCHR.SING_B] : fa;
+        const beat = singing ? (st.reads >> 2) : (now >> 4);
+        fbFrame((beat & 1) ? fbb : fa);
+      }
+      if (singing ? st.done : (--modeT === 0)) {
+        if (singing) event = "end";
+        singing = 0; mode = IDLE; face = cfg[PCHR.IDLE]; faceT = 0;
+      }
+    } else {
+      if (faceT && --faceT === 0) face = cfg[PCHR.IDLE];
+      if (face === cfg[PCHR.IDLE] && cfg[PCHR.BLINK] < count) {
+        if (blinkOn) { if (--blinkOn === 0) blinkT = 0; }
+        else if (++blinkT >= blinkNext) { blinkOn = 4; blinkNext = blinkNext === 100 ? 160 : 100; }
+      } else { blinkOn = 0; blinkT = 0; }
+      fbFrame(blinkOn ? cfg[PCHR.BLINK] : face);
+    }
+    return { fb, exit: false, event, mode: ["idle", "clock", "days", "sing"][mode] };
+  }
+  return { tick };
+}
+
+/* Date → SWI 0Dh / 0Eh と同じ BCD */
+function rtcFromDate(dt) {
+  const b = (v) => ((Math.floor(v / 10) % 10) << 4) | (v % 10);
+  const y = dt.getFullYear();
+  return {
+    date: ((b(Math.floor(y / 100)) << 24) | (b(y % 100) << 16) | (b(dt.getMonth() + 1) << 8) | b(dt.getDate())) >>> 0,
+    time: (((dt.getDay() + 1) << 24) | (b(dt.getHours()) << 16) | (b(dt.getMinutes()) << 8) | b(dt.getSeconds())) >>> 0,
+  };
+}
+if (typeof module !== "undefined") module.exports = { CharaEngine, rtcFromDate, PCHR, CHARA_NONE, CHARA_BTN };
+
+</script>
+<script>
 "use strict";
 /* ============================================================
  * 共通データ
  * ============================================================ */
 const N = 32;
-const PLAYER_B64 = "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";
+const PLAYER_B64 = "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";
 const STORE_KEY = "poc-dot-studio-v1";
 
 const state = {
@@ -1625,7 +1969,7 @@ function colorIcon(words) {
   return out;
 }
 
-function buildPocFile(frames, delay, title, music = null) {
+function buildPocFile(frames, delay, title, music = null, charaCfg = null) {
   const player = b64ToBytes(PLAYER_B64);
   const magic = String.fromCharCode(...player.slice(0, 4));
   if (magic !== "PANM") throw new Error("再生プログラムが壊れています");
@@ -1637,11 +1981,16 @@ function buildPocFile(frames, delay, title, music = null) {
   delay = Math.max(1, Math.min(30, delay | 0));
   const framesAddr = BASE + HEADER_SIZE + body.length;
   const musicAddr = music ? framesAddr + count * 128 : 0;
+  if (charaCfg && music) {   // 1回だけ鳴らす曲の終わりの目印 (休符1ステップ)
+    const m2 = new Uint8Array(pad4(music.length) + 16); m2.set(music); music = m2;
+  }
+  const pchr = charaCfg ? new Uint8Array(charaCfg.buffer.slice(0)) : null;
+  const charaAddr = pchr ? framesAddr + count * 128 + (music ? music.length : 0) : 0;
   bv.setUint32(8, framesAddr, true); bv.setUint32(12, count, true); bv.setUint32(16, delay, true);
-  bv.setUint32(20, musicAddr, true);
+  bv.setUint32(20, musicAddr, true); bv.setUint32(24, charaAddr, true);
 
   const words = frames.map(frameToWords);
-  const raw = HEADER_SIZE + body.length + count * 128 + (music ? music.length : 0);
+  const raw = HEADER_SIZE + body.length + count * 128 + (music ? music.length : 0) + (pchr ? pchr.length : 0);
   const blocks = Math.ceil(raw / BLOCK);
   if (blocks > MAX_BLOCKS) throw new Error(`大きすぎます (${blocks}ブロック)。コマか曲の長さを減らしてください`);
   const data = new Uint8Array(blocks * BLOCK);
@@ -1654,12 +2003,15 @@ function buildPocFile(frames, delay, title, music = null) {
   data[0x56] = 1; data[0x57] = 0;
   dv.setUint32(0x5C, entry, true);
   dv.setUint16(0x60, 0x7FFF, true); dv.setUint16(0x62, 0x8000, true);
-  data.set(colorIcon(words[0]), 0x80);
-  dv.setUint16(0x100, count, true); dv.setUint16(0x102, delay, true); dv.setUint32(0x104, framesAddr, true);
+  const icon = pchr ? Math.min(count - 1, charaCfg[2]) : 0;      // キャラクターモードは待機の顔をアイコンに
+  data.set(colorIcon(words[icon]), 0x80);
+  if (pchr) { dv.setUint16(0x100, 1, true); dv.setUint16(0x102, delay, true); dv.setUint32(0x104, framesAddr + icon * 128, true); }
+  else { dv.setUint16(0x100, count, true); dv.setUint16(0x102, delay, true); dv.setUint32(0x104, framesAddr, true); }
   data.set(body, HEADER_SIZE);
   let o = HEADER_SIZE + body.length;
   for (const w of words) { for (let y = 0; y < N; y++) dv.setUint32(o + y * 4, w[y], true); o += 128; }
-  if (music) data.set(music, o);
+  if (music) { data.set(music, o); o += music.length; }
+  if (pchr) data.set(pchr, o);
   return { data, blocks };
 }
 
@@ -1976,6 +2328,12 @@ function renderSpeed() {
   $("faster").disabled = state.delay <= 1;
 }
 
+/* 今のコマ数で、曲が何小節まで入るか (1小節 = 16ステップ × 16バイト) */
+function barsThatFit() {
+  const playerLen = Math.ceil(b64ToBytes(PLAYER_B64).length / 4) * 4;
+  const free = MAX_BLOCKS * BLOCK - HEADER_SIZE - playerLen - state.frames.length * 128 - 32;
+  return Math.max(0, Math.min(MAX_BARS, Math.floor(free / 256)));
+}
 function renderMeter() {
   let text, blocks = 0;
   try {
@@ -1993,6 +2351,11 @@ function renderMeter() {
   for (let i = 0; i < 15; i++) { const s = document.createElement("i"); if (i < blocks) s.className = "used"; bar.append(s); }
   $("meterText").textContent = text;
   $("saveZip").disabled = blocks > MAX_BLOCKS;
+  if ($("barsHint")) {
+    const fit = barsThatFit();
+    $("barsHint").textContent = song.bars > fit ? `ポケステに入るのは ${fit}小節まで (今のコマ数のとき)` : `ポケステに入るのは ${fit}小節まで`;
+    $("barsHint").classList.toggle("over", song.bars > fit);
+  }
 }
 
 function renderAll() {
@@ -2000,6 +2363,7 @@ function renderAll() {
   renderStrip(); drawEditor(); renderSpeed(); renderMeter();
   $("sampleTag").hidden = !state.isSample;
   needLcd = true;
+  if (typeof renderChara === "function") renderChara();
 }
 
 /* ============================================================
@@ -2012,11 +2376,12 @@ function loop(t) {
   let changed = false;
   while (acc >= 1000 / 30) {
     acc -= 1000 / 30;
+    if (chara.enabled) { if (state.frames.length) charaTick(); continue; }
     if (state.playing && state.frames.length) {
       if (++tickWait >= state.delay) { tickWait = 0; playIdx = (playIdx + 1) % state.frames.length; changed = true; }
     }
   }
-  if (changed || needLcd) paintLcd();
+  if (!chara.enabled && (changed || needLcd)) paintLcd();
   tickMusicUi();
   requestAnimationFrame(loop);
 }
@@ -2041,7 +2406,7 @@ function pushUndo() {
   if (undoStack.length > 40) undoStack.shift();
   $("undo").disabled = false;
 }
-function changed() { state.isSample = false; $("sampleTag").hidden = true; needLcd = true; saveDraft(); }
+function changed() { state.isSample = false; $("sampleTag").hidden = true; needLcd = true; charaEngine = null; saveDraft(); }
 
 function cellAt(ev) {
   const r = $("ed").getBoundingClientRect();
@@ -2108,10 +2473,10 @@ $("undo").onclick = () => {
 /* コマ操作 */
 $("fAdd").onclick = () => { pushUndo(); state.frames.splice(state.cur + 1, 0, blank()); state.cur++; renderAll(); changed(); };
 $("fDup").onclick = () => { pushUndo(); state.frames.splice(state.cur + 1, 0, state.frames[state.cur].slice()); state.cur++; renderAll(); changed(); };
-$("fDel").onclick = () => { if (state.frames.length <= 1) return; pushUndo(); state.frames.splice(state.cur, 1); renderAll(); changed(); };
+$("fDel").onclick = () => { if (state.frames.length <= 1) return; pushUndo(); charaFramesRemoved(state.cur); state.frames.splice(state.cur, 1); renderAll(); changed(); };
 function move(d) {
   const j = state.cur + d; if (j < 0 || j >= state.frames.length) return;
-  pushUndo(); const a = state.frames; [a[state.cur], a[j]] = [a[j], a[state.cur]]; state.cur = j; renderAll(); changed();
+  pushUndo(); const a = state.frames; [a[state.cur], a[j]] = [a[j], a[state.cur]]; charaFramesSwapped(state.cur, j); state.cur = j; renderAll(); changed();
 }
 $("fLeft").onclick = () => move(-1); $("fRight").onclick = () => move(1);
 
@@ -2153,10 +2518,12 @@ function takeConverted(replace) {
   if (replace) { state.frames = add; state.cur = 0; }
   else { state.frames.push(...add); state.cur = state.frames.length - add.length; }
   if (suggestedDelay) state.delay = suggestedDelay;
+  lastAdded = { start: state.cur, count: add.length, delay: suggestedDelay || state.delay };
   playIdx = state.cur; tickWait = 0;
   renderAll(); changed();
   toast(`${add.length}コマを${replace ? "置き換えました" : "追加しました"}`);
 }
+let lastAdded = null;   // 最後に「画像から変換」で足したコマ (キャラクターモードの曲の間のアニメに使う)
 $("addFrames").onclick = () => takeConverted(false);
 $("replaceFrames").onclick = () => takeConverted(true);
 
@@ -2173,6 +2540,7 @@ const TRACK_DEF = [
   { name: "ベース", duty: 128, vol: 11, oct: 3, low: 43 },
 ];
 const ROWS = 25, CELL_W = 22, CELL_H = 16, KEYS_W = 46;
+const MAX_BARS = 999;   // 画面上の上限。実際に入るのはポケステの容量 (15ブロック) まで: barsThatFit()
 const LEN_STEPS = { 1: 16, 2: 8, 4: 4, 8: 2, 16: 1 };
 
 function newSong() {
@@ -2256,32 +2624,54 @@ function audioCtx() {
   if (actx.state === "suspended") actx.resume();
   return actx;
 }
-function startMusic(offset = 0, from = "music", sg = song) {
+/* 長い曲でもメモリを食わないように、2秒ずつ AudioBuffer にして順に鳴らす */
+let musicRaw = null, musicTimer = 0, musicNextT = 0, musicNextS = 0, musicNodes = [];
+const MUSIC_CHUNK = 2 * SND_RATE;
+function pumpMusic() {
+  if (!musicSrc || !actx) return;
+  const ctx = actx, sr = ctx.sampleRate, total = musicRaw.length;
+  while (musicNextT < ctx.currentTime + 1.2) {
+    if (musicOneShot && musicNextS < 0) return;   // 1回だけ鳴らす曲は最後まで並べ終わった
+    const n = Math.min(MUSIC_CHUNK, total - musicNextS);
+    const len = Math.max(1, Math.round(n * sr / SND_RATE));
+    const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+    for (let j = 0; j < len; j++) d[j] = musicRaw[musicNextS + Math.min(n - 1, Math.floor(j * SND_RATE / sr))] / 512 * 0.85;
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(musicNextT);
+    src.onended = () => { const k = musicNodes.indexOf(src); if (k >= 0) musicNodes.splice(k, 1); };
+    musicNodes.push(src);
+    musicNextT += n / SND_RATE;
+    musicNextS += n; if (musicNextS >= total) musicNextS = musicOneShot ? -1 : 0;   // くり返し
+  }
+}
+let musicOneShot = false;
+function startMusic(offset = 0, from = "music", sg = song, oneShot = false) {
   stopMusic(true);
   const ctx = audioCtx();
   if (!ctx) { toast("この端末のブラウザでは音を鳴らせません"); return false; }
   if (!songHasNotes(sg)) { toast("曲に音符がありません"); updateMusicUi(); return false; }
   const pmu = compileSong(sg);
   const sl = stepLen(sg.bpm), total = sg.bars * 16 * sl;
-  const raw = renderPmu(pmu, total);
-  const sr = ctx.sampleRate, len = Math.ceil(total * sr / SND_RATE);
-  const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
-  for (let j = 0; j < len; j++) d[j] = raw[Math.min(total - 1, Math.floor(j * SND_RATE / sr))] / 512 * 0.85;
-  const src = ctx.createBufferSource();
-  src.buffer = buf; src.loop = true; src.connect(ctx.destination);
+  musicRaw = renderPmu(pmu, total);
   musicLoop = total / SND_RATE; musicSL = sl; musicFrom = from;
   const off = ((offset % musicLoop) + musicLoop) % musicLoop;
-  src.start(0, off);
-  musicT0 = ctx.currentTime - off;
-  musicSrc = src;
+  musicNextS = Math.min(total - 1, Math.floor(off * SND_RATE));
+  musicNextT = ctx.currentTime + 0.06;
+  musicT0 = musicNextT - musicNextS / SND_RATE;
+  musicSrc = { from };
+  musicOneShot = oneShot;
+  pumpMusic();
+  musicTimer = setInterval(pumpMusic, 200);
   updateMusicUi();
   return true;
 }
 function stopMusic(quiet) {
-  if (musicSrc) { try { musicSrc.stop(); } catch (e) { /* 停止済み */ } musicSrc = null; }
+  clearInterval(musicTimer); musicTimer = 0;
+  for (const n of musicNodes) { try { n.stop(); } catch (e) { /* 停止済み */ } }
+  musicNodes = []; musicSrc = null;
   if (!quiet) updateMusicUi();
 }
-const musicPos = () => (actx && musicSrc ? (actx.currentTime - musicT0) % musicLoop : 0);
+const musicPos = () => (actx && musicSrc ? (((actx.currentTime - musicT0) % musicLoop) + musicLoop) % musicLoop : 0);
 let restartTimer = 0;
 function restartIfPlaying() {
   if (!musicSrc || musicFrom === "midi") return;
@@ -2494,7 +2884,8 @@ const trackColor = (t) => cssVar(`--t${t + 1}`);
 
 function renderMusic() {
   $("bpm").value = song.bpm; if (document.activeElement !== $("bpmNum")) $("bpmNum").value = song.bpm;
-  $("bars").value = song.bars; $("key").value = (song.minor ? "m" : "") + song.key;
+  if (document.activeElement !== $("bars")) $("bars").value = song.bars;
+  $("key").value = (song.minor ? "m" : "") + song.key;
   $("chords").value = song.chords;
   const tabs = $("tabs").children;
   for (let t = 0; t < 4; t++) {
@@ -2512,38 +2903,51 @@ function renderMusic() {
   drawRoll();
 }
 
+/* ピアノロール: 長い曲でも重くならないように、見えている所のまわりだけ描く */
+let rollX0 = 0, rollCW = 0;
 function drawRoll() {
   const steps = totalSteps(), low = song.tracks[curTrack].low, high = low + ROWS - 1;
   const dpr = window.devicePixelRatio || 1;
   const W = steps * CELL_W, H = ROWS * CELL_H;
-  const c = $("roll"), k = $("rollKeys");
-  for (const [cv, w] of [[c, W], [k, KEYS_W]]) {
+  const c = $("roll"), k = $("rollKeys"), sc = $("rollScroll"), area = c.parentElement;
+  area.style.width = W + "px"; area.style.height = H + "px";
+  const viewW = Math.max(240, sc.clientWidth - KEYS_W);
+  const cw = Math.min(W, viewW * 3);
+  const x0 = Math.max(0, Math.min(W - cw, Math.floor((sc.scrollLeft - viewW) / CELL_W) * CELL_W));
+  rollX0 = x0; rollCW = cw;
+  c.style.left = x0 + "px";
+  for (const [cv, w] of [[c, cw], [k, KEYS_W]]) {
     cv.style.width = w + "px"; cv.style.height = H + "px";
     cv.width = Math.round(w * dpr); cv.height = Math.round(H * dpr);
   }
   const g = c.getContext("2d"), gk = k.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0); gk.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.setTransform(dpr, 0, 0, dpr, -x0 * dpr, 0); gk.setTransform(dpr, 0, 0, dpr, 0, 0);
   const white = cssVar("--roll-white"), black = cssVar("--roll-black"), grid = cssVar("--roll-grid"),
     beat = cssVar("--roll-beat"), barc = cssVar("--roll-bar"), ink = cssVar("--ink"), muted = cssVar("--muted");
   gk.fillStyle = cssVar("--surface"); gk.fillRect(0, 0, KEYS_W, H);
   gk.font = `11px ${getComputedStyle(document.body).fontFamily}`; gk.textBaseline = "middle";
   for (let r = 0; r < ROWS; r++) {
     const m = high - r, isBlack = [1, 3, 6, 8, 10].includes(m % 12);
-    g.fillStyle = isBlack ? black : white; g.fillRect(0, r * CELL_H, W, CELL_H);
-    g.fillStyle = grid; g.fillRect(0, (r + 1) * CELL_H - 1, W, 1);
+    g.fillStyle = isBlack ? black : white; g.fillRect(x0, r * CELL_H, cw, CELL_H);
+    g.fillStyle = grid; g.fillRect(x0, (r + 1) * CELL_H - 1, cw, 1);
     gk.fillStyle = isBlack ? black : white; gk.fillRect(0, r * CELL_H, KEYS_W - 1, CELL_H - 1);
     gk.fillStyle = m % 12 === 0 ? ink : muted;
     gk.fillText(midiName(m), 4, r * CELL_H + CELL_H / 2);
   }
-  for (let s = 0; s <= steps; s++) {
+  const s0 = Math.floor(x0 / CELL_W), s1 = Math.min(steps, Math.ceil((x0 + cw) / CELL_W));
+  for (let s = s0; s <= s1; s++) {
     g.fillStyle = s % 16 === 0 ? barc : s % 4 === 0 ? beat : grid;
     g.fillRect(s * CELL_W - (s % 16 === 0 ? 1 : 0), 0, s % 16 === 0 ? 2 : 1, H);
   }
+  // 小節番号
+  g.font = `10px ${getComputedStyle(document.body).fontFamily}`; g.textBaseline = "top"; g.fillStyle = muted;
+  for (let s = Math.ceil(s0 / 16) * 16; s < s1; s += 16) g.fillText(String(s / 16 + 1), s * CELL_W + 3, 2);
+  const vis = (n) => n.s + n.l > s0 && n.s < s1;
   // ほかのトラックはうすく
   song.tracks.forEach((tr, t) => {
     if (t === curTrack) return;
     g.globalAlpha = 0.25; g.fillStyle = trackColor(t);
-    for (const n of tr.notes) if (n.n >= low && n.n <= high) g.fillRect(n.s * CELL_W + 2, (high - n.n) * CELL_H + 4, n.l * CELL_W - 4, CELL_H - 8);
+    for (const n of tr.notes) if (vis(n) && n.n >= low && n.n <= high) g.fillRect(n.s * CELL_W + 2, (high - n.n) * CELL_H + 4, n.l * CELL_W - 4, CELL_H - 8);
     g.globalAlpha = 1;
   });
   const tr = song.tracks[curTrack], col = trackColor(curTrack);
@@ -2552,6 +2956,7 @@ function drawRoll() {
   for (const n of tr.notes) {
     if (n.n > high) { above = true; continue; }
     if (n.n < low) { below = true; continue; }
+    if (!vis(n)) continue;
     const x = n.s * CELL_W + 1, y = (high - n.n) * CELL_H + 1, w = n.l * CELL_W - 2, h = CELL_H - 2;
     g.fillStyle = col; g.beginPath();
     if (g.roundRect) g.roundRect(x, y, w, h, 3); else g.rect(x, y, w, h);
@@ -2561,10 +2966,19 @@ function drawRoll() {
   $("rangeNote").textContent = above || below
     ? `表示範囲の${above && below ? "上と下" : above ? "上" : "下"}にも音符があります (▲▼で表示を動かせます)` : "";
 }
+let rollRaf = 0;
+function rollScrolled() {
+  if (rollRaf) return;
+  rollRaf = requestAnimationFrame(() => {
+    rollRaf = 0;
+    const sc = $("rollScroll"), viewW = sc.clientWidth - KEYS_W;
+    if (sc.scrollLeft < rollX0 || sc.scrollLeft + viewW > rollX0 + rollCW) drawRoll();
+  });
+}
 
 function rollClick(e) {
   const r = $("roll").getBoundingClientRect();
-  const s = Math.floor((e.clientX - r.left) / CELL_W), row = Math.floor((e.clientY - r.top) / CELL_H);
+  const s = Math.floor((e.clientX - r.left + rollX0) / CELL_W), row = Math.floor((e.clientY - r.top) / CELL_H);
   if (s < 0 || s >= totalSteps() || row < 0 || row >= ROWS) return;
   const tr = song.tracks[curTrack], m = tr.low + ROWS - 1 - row;
   pushSongUndo();
@@ -2621,7 +3035,8 @@ function genBass(list) {
 
 function buildMusicUi() {
   const bars = $("bars");
-  for (let b = 1; b <= 32; b++) { const o = document.createElement("option"); o.value = b; o.textContent = `${b} 小節`; bars.append(o); }
+  bars.max = MAX_BARS;
+  bars.addEventListener("keydown", (e) => { if (e.key === "Enter") bars.blur(); });
   const key = $("key");
   for (const minor of [false, true]) KEY_NAMES.forEach((nm, i) => {
     const o = document.createElement("option"); o.value = (minor ? "m" : "") + i;
@@ -2642,6 +3057,8 @@ function buildMusicUi() {
     for (const x of $("lens").children) x.setAttribute("aria-pressed", x === b);
   };
   $("roll").addEventListener("click", rollClick);
+  $("rollScroll").addEventListener("scroll", rollScrolled, { passive: true });
+  window.addEventListener("resize", () => drawRoll());
   $("octUp").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.min(96 - ROWS + 1, tr.low + 12); drawRoll(); saveDraft(); };
   $("octDown").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.max(24, tr.low - 12); drawRoll(); saveDraft(); };
   $("bpm").addEventListener("input", () => { song.bpm = +$("bpm").value; $("bpmNum").value = song.bpm; songChanged({ keepSample: true }); });
@@ -2656,7 +3073,13 @@ function buildMusicUi() {
     if (v !== song.bpm) { song.bpm = v; $("bpm").value = v; songChanged({ keepSample: true }); }
   });
   $("bpmNum").addEventListener("keydown", (e) => { if (e.key === "Enter") $("bpmNum").blur(); });
-  $("bars").addEventListener("change", () => { pushSongUndo(); song.bars = +$("bars").value; songChanged(); });
+  $("bars").addEventListener("change", () => {
+    const v = Math.max(1, Math.min(MAX_BARS, Math.round(+$("bars").value) || song.bars));
+    $("bars").value = v;
+    if (v === song.bars) return;
+    if (v < song.bars && song.tracks.some((t) => t.notes.some((n) => n.s >= v * 16))) toast(`${v}小節より後ろの音符は鳴らなくなります (長さを戻せば戻ります)`);
+    pushSongUndo(); song.bars = v; songChanged();
+  });
   $("key").addEventListener("change", () => { const v = $("key").value; song.minor = v[0] === "m"; song.key = +v.replace("m", ""); saveDraft(); });
   $("duty").addEventListener("change", () => { pushSongUndo(); song.tracks[curTrack].duty = +$("duty").value; songChanged({ keepSample: true }); });
   $("vol").addEventListener("input", () => { song.tracks[curTrack].vol = +$("vol").value; $("volOut").textContent = $("vol").value; songChanged({ keepSample: true }); });
@@ -2671,12 +3094,12 @@ function buildMusicUi() {
     if (r.error) { $("mmlMsg").textContent = r.error; return; }
     pushSongUndo();
     if (r.steps > totalSteps()) {
-      const need = Math.min(32, Math.ceil(r.steps / 16));
+      const need = Math.min(MAX_BARS, Math.ceil(r.steps / 16));
       if (need > song.bars) song.bars = need;
     }
     song.tracks[curTrack].notes = r.notes.filter((n) => n.s < totalSteps());
     song.tracks[curTrack].mute = false;
-    $("mmlMsg").textContent = `${r.notes.length}個の音符を入れました` + (r.steps > 32 * 16 ? " (32小節を超えた分は切りました)" : "");
+    $("mmlMsg").textContent = `${r.notes.length}個の音符を入れました` + (r.steps > MAX_BARS * 16 ? ` (${MAX_BARS}小節を超えた分は切りました)` : "");
     $("mml").blur();
     songChanged();
   };
@@ -2868,7 +3291,7 @@ function midiCut() {
   const bar = d.bars[b0];
   const beat = Math.max(0, Math.min(bar.num - 1, (+$("midiBeat").value || 1) - 1));
   const start = bar.s + Math.round(beat * 16 / bar.den);
-  const lenBars = Math.max(1, Math.min(32, Math.round(+$("midiLen").value) || 8));
+  const lenBars = Math.max(1, Math.min(MAX_BARS, Math.round(+$("midiLen").value) || 8));
   // 長さは MIDI の小節で数える (3/4 なら1小節 = 16分音符12個)
   let span = 0;
   for (let i = 0; i < lenBars; i++) { const bb = d.bars[b0 + i] || d.bars[d.bars.length - 1]; span += bb.len; }
@@ -2903,7 +3326,7 @@ function midiPart(m, cut) {
 function midiSong() {
   const cut = midiCut(), sg = newSong();
   sg.bpm = Math.max(40, Math.min(240, Math.round(+$("midiBpm").value) || 120));
-  sg.bars = Math.max(1, Math.min(32, Math.ceil(cut.steps / 16)));
+  sg.bars = Math.max(1, Math.min(MAX_BARS, Math.ceil(cut.steps / 16)));
   midi.map.forEach((m, t) => { sg.tracks[t].notes = midiPart(m, cut); });
   return { sg, cut };
 }
@@ -2965,10 +3388,12 @@ function renderMidiRange() {
   }
   const endBar = d.bars.findIndex((x) => x.s >= cut.end);
   const counts = midi.map.map((m) => midiPart(m, cut).length);
+  const fit = barsThatFit(), need = Math.ceil(cut.steps / 16);
   $("midiRange").textContent = `${cut.b0 + 1}小節目${+$("midiBeat").value > 1 ? `の${$("midiBeat").value}拍目` : ""}から ${cut.lenBars}小節ぶん` +
-    (cut.capped ? " (ポケステの曲は16分音符512個までなので、そこで切ります)" : "") +
+    (cut.capped ? ` (${MAX_BARS}小節で切ります)` : "") +
     (endBar > 0 ? ` (${endBar}小節目まで)` : " (曲の終わりまで)") + ` ・ 音符 ${TRACK_DEF.map((t, i) => `${t.name}${counts[i]}`).join(" / ")}` +
-    (d.bars.some((x) => x.len !== 16) ? " ・ 4/4以外の拍子は、作曲パネルでは4/4の小節線で表示されます (音のタイミングはそのまま)" : "");
+    (d.bars.some((x) => x.len !== 16) ? " ・ 4/4以外の拍子は、作曲パネルでは4/4の小節線で表示されます (音のタイミングはそのまま)" : "") +
+    (need > fit ? ` ・ 長すぎてポケステに入りません (今のコマ数で ${fit}小節まで)` : "");
   drawMidiOverview();
   if (musicSrc && musicFrom === "midi") playMidiCut(true);
 }
@@ -3010,7 +3435,7 @@ async function loadMidiFile(file) {
     $("midiBody").hidden = false;
     $("midiStart").max = d.bars.length; $("midiStart").value = 1;
     $("midiBeat").replaceChildren();
-    $("midiLen").value = Math.min(32, d.bars.length);
+    $("midiLen").value = Math.min(barsThatFit() || 32, d.bars.length);
     const first = d.sources.flatMap((x) => x.notes).reduce((a, e) => Math.min(a, e.s), Infinity);
     $("midiBpm").value = Math.max(40, Math.min(240, Math.round(d.tempoAt(first))));
     $("midiInfo").textContent = `${file.name}: ${d.bars.length}小節、トラック${d.sources.length}つ、テンポ ${Math.round(d.tempoAt(first))}` +
@@ -3057,8 +3482,9 @@ function buildMidiUi() {
   $("midiStart").addEventListener("change", () => { clampNum($("midiStart"), 1, midi.data.bars.length, 1); $("midiBeat").replaceChildren(); renderMidiRange(); });
   $("midiStart").addEventListener("input", () => { const v = +$("midiStart").value; if (v >= 1 && v <= midi.data.bars.length) { $("midiBeat").replaceChildren(); renderMidiRange(); } });
   $("midiBeat").addEventListener("change", renderMidiRange);
-  $("midiLen").addEventListener("change", () => { clampNum($("midiLen"), 1, 32, 8); renderMidiRange(); });
-  $("midiLen").addEventListener("input", () => { const v = +$("midiLen").value; if (v >= 1 && v <= 32) renderMidiRange(); });
+  $("midiLen").addEventListener("change", () => { clampNum($("midiLen"), 1, MAX_BARS, 8); renderMidiRange(); });
+  $("midiLen").addEventListener("input", () => { const v = +$("midiLen").value; if (v >= 1 && v <= MAX_BARS) renderMidiRange(); });
+  $("midiToEnd").onclick = () => { if (!midi.data) return; $("midiLen").value = Math.max(1, midi.data.bars.length - midiCut().b0); renderMidiRange(); };
   $("midiBpm").addEventListener("change", () => { clampNum($("midiBpm"), 40, 240, 120); if (musicSrc && musicFrom === "midi") playMidiCut(true); });
   for (const id of ["midiStart", "midiLen", "midiBpm"]) $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") $(id).blur(); });
   $("midiOv").addEventListener("click", (e) => {
@@ -3076,7 +3502,7 @@ function buildMidiUi() {
  * 楽譜から読み取り: 画像 → OMR → 4パートのドレミ
  * ============================================================ */
 const omr = { pages: [], result: null, raw: null, shift: [0, 0, 0, 0] };
-const OMR_MAX_STEPS = 32 * 16;
+const OMR_MAX_STEPS = MAX_BARS * 16;
 
 function loadScoreImage(file) {
   return new Promise((resolve, reject) => {
@@ -3285,7 +3711,7 @@ function applyOmrToSong() {
   pushSongUndo();
   const bpm = Math.max(40, Math.min(240, Math.round(+$("omrBpm").value || 120)));
   song.bpm = bpm;
-  song.bars = Math.min(32, Math.ceil(end / 16));
+  song.bars = Math.min(MAX_BARS, Math.ceil(end / 16));
   song.isSample = false; song.chords = "";
   const firstKey = omr.result.measures.find((m) => m.start >= from) || omr.result.measures[0];
   const fifths = (firstKey.keys && firstKey.keys[0]) || 0;
@@ -3301,7 +3727,7 @@ function applyOmrToSong() {
   songChanged();
   const cut = parsed.flat().length < tas.reduce((a, ta, t) => a + (parseDoremi(ta.value, TRACK_DEF[t].oct).notes || []).length, 0);
   $("omrMsg").textContent = "";
-  toast(`作曲パネルに入れました (${song.bars}小節 / BPM ${bpm})` + (cut ? "。32小節を超えた分は入っていません" : ""));
+  toast(`作曲パネルに入れました (${song.bars}小節 / BPM ${bpm})` + (cut ? `。${MAX_BARS}小節を超えた分は入っていません` : "") + (song.bars > barsThatFit() ? `。ポケステに入るのは ${barsThatFit()}小節までです` : ""));
   document.querySelector(".music").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -3328,6 +3754,319 @@ function buildScoreUi() {
     const v = Math.max(40, Math.min(240, Math.round(+$("omrBpm").value || 120)));
     $("omrBpm").value = v;
   });
+}
+
+/* ============================================================
+ * キャラクターモード (src/chara.c)。設定・プレビュー・書き出し
+ * ============================================================ */
+const CHARA_BTNS = [["fire", "決定"], ["right", "右"], ["left", "左"], ["down", "下"], ["up", "上"]];
+const CMD_MARK = { up: "▲", down: "▼", left: "◀", right: "▶", fire: "●" };
+function newChara() {
+  return {
+    enabled: false, idle: 0, blink: -1, faces: [-1, -1, -1, -1, -1], faceHold: 2,
+    clockBg: -1, daysBg: -1, singA: -1, singB: -1,
+    dbl: "up", long: "fire", cmd: ["up", "up", "down", "down", "left", "right"],
+    baseDate: "2026-01-22", countFrom: 0, daysY: 12,
+    show: 5, dblWin: 0.4, longTime: 1, cmdGap: 1, exit: 3,
+    singMode: "faces", singFirst: 0, singCount: 4, singSync: 3, singDelay: 4,
+  };
+}
+let chara = newChara();
+function validChara(x) {
+  const c = newChara();
+  if (!x || typeof x !== "object") return c;
+  const fr = (v) => (Number.isInteger(v) && v >= 0 && v < 1000 ? v : -1);
+  const btn = (v) => (CHARA_BTNS.some(([k]) => k === v) ? v : "");
+  const num = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : d);
+  c.enabled = !!x.enabled;
+  c.idle = Math.max(0, fr(x.idle)); c.blink = fr(x.blink);
+  c.faces = [0, 1, 2, 3, 4].map((i) => fr((x.faces || [])[i]));
+  for (const k of ["clockBg", "daysBg", "singA", "singB"]) c[k] = fr(x[k]);
+  c.dbl = btn(x.dbl); c.long = btn(x.long);
+  c.cmd = (Array.isArray(x.cmd) ? x.cmd : []).map(btn).filter(Boolean).slice(0, 8);
+  c.baseDate = /^\d{4}-\d{2}-\d{2}$/.test(x.baseDate || "") ? x.baseDate : c.baseDate;
+  c.countFrom = x.countFrom ? 1 : 0;
+  c.daysY = num(x.daysY, 0, 22, 12);
+  c.faceHold = num(x.faceHold, 0.2, 30, 2); c.show = num(x.show, 1, 60, 5);
+  c.dblWin = num(x.dblWin, 0.1, 1.5, 0.4); c.longTime = num(x.longTime, 0.3, 2.5, 1);
+  c.cmdGap = num(x.cmdGap, 0.3, 3, 1); c.exit = 3;
+  c.singMode = ["faces", "image", "anim"].includes(x.singMode) ? x.singMode : "faces";
+  c.singFirst = Math.max(0, fr(x.singFirst)); c.singCount = Math.round(num(x.singCount, 1, 999, 4));
+  c.singSync = Math.round(num(x.singSync, 0, 4, 3)); c.singDelay = Math.round(num(x.singDelay, 1, 30, 4));
+  return c;
+}
+
+/* PCHR ブロック (tools/mkpoc.py の build_pchr と同じ) */
+function pcharWords(c) {
+  const w = new Uint32Array(PCHR.WORDS);
+  const fr = (v) => (v < 0 || v >= state.frames.length ? CHARA_NONE : v);
+  const tick = (sec) => Math.max(1, Math.round(sec * 30));
+  const btn = (b) => CHARA_BTN[b] || 0;
+  const [y, m, d] = c.baseDate.split("-").map(Number);
+  w[0] = 0x52484350; w[1] = 2;
+  w[2] = c.idle < state.frames.length ? c.idle : 0; w[3] = fr(c.blink);
+  for (let i = 0; i < 5; i++) w[4 + i] = fr(c.faces[i]);
+  w[9] = tick(c.faceHold);
+  w[10] = fr(c.clockBg); w[11] = fr(c.daysBg); w[12] = fr(c.singA); w[13] = fr(c.singB);
+  w[14] = btn(c.dbl); w[15] = btn(c.long);
+  const cmd = c.cmd.slice(0, 8);
+  w[16] = cmd.length; cmd.forEach((b, i) => { w[17 + i] = btn(b); });
+  w[25] = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2000, 0, 1)) / 86400000);
+  w[26] = c.countFrom ? 1 : 0;
+  w[27] = tick(c.show); w[28] = tick(c.dblWin); w[29] = tick(c.longTime); w[30] = tick(c.cmdGap);
+  w[31] = c.daysY | 0; w[32] = tick(c.exit);
+  // version 2: 曲の間のアニメーション
+  if (c.singMode === "image") w[13] = CHARA_NONE;
+  w[34] = c.singMode === "anim" ? 1 : 0;
+  w[35] = c.singFirst; w[36] = c.singMode === "anim" ? c.singCount : 0;
+  w[37] = c.singDelay; w[38] = c.singSync;
+  return w;
+}
+
+/* 設定の気になるところ */
+function charaReadme() {
+  const nm = (b) => (CHARA_BTNS.find(([k]) => k === b) || [, ""])[1];
+  return [
+    "キャラクターモードでの操作:",
+    "  ボタンを押す        表情が変わる (しばらくすると待機の顔に戻る)",
+    chara.dbl ? `  ${nm(chara.dbl)}ボタンを2回押す   日付と時計` : "",
+    chara.long ? `  ${nm(chara.long)}ボタンを長押し   ${chara.baseDate} からの日数` : "",
+    chara.cmd.length ? `  ${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
+    chara.cmd.length && chara.singMode === "anim" ? `  (曲の間はコマ ${chara.singFirst + 1} から ${chara.singCount}コマのアニメーション)` : "",
+    "  どれかを3秒押し続ける  時計画面に戻る",
+    "  (時計画面で消音にしていると、曲は音を出さずに進みます)",
+  ].filter(Boolean);
+}
+function charaWarnings() {
+  const out = [], c = chara;
+  if (c.cmd.length === 1) out.push("コマンドが1つだけだと、そのボタンを押すたびに曲が鳴ります");
+  if (c.cmd.length && c.long && c.cmd.includes(c.long)) out.push(`コマンドの「${CMD_MARK[c.long]}」は長押しのボタンでもあります。コマンドの途中で長押ししないでください`);
+  if (c.singMode === "anim" && c.singFirst + c.singCount > state.frames.length) out.push(`曲の間のアニメは、コマ ${c.singFirst + 1}〜${state.frames.length} だけを使います (コマが足りません)`);
+  if (c.cmd.length && !songHasNotes()) out.push("曲がありません。コマンドでは曲の表情を出すだけになります (作曲パネルで曲を作れます)");
+  if (!state.frames.length) out.push("コマがありません");
+  return out;
+}
+
+/* ---- 設定パネル ---- */
+const FACE_ROWS = [
+  ["idle", "待機の顔", false], ["blink", "まばたき", true],
+  ...CHARA_BTNS.map(([k, nm], i) => [`face${i}`, `${nm}を押す`, true]),
+  ["clockBg", "時計の背景", true], ["daysBg", "日数の背景", true],
+];
+const charaGet = (key) => (key.startsWith("face") ? chara.faces[+key.slice(4)] : chara[key]);
+function charaSet(key, v) { if (key.startsWith("face")) chara.faces[+key.slice(4)] = v; else chara[key] = v; }
+
+const SING_ROWS = [["singA", "1枚目"], ["singB", "2枚目"]];
+function buildCharaUi() {
+  $("singRows").replaceChildren(...SING_ROWS.map(([key, label]) => faceRow(key, label)));
+  $("charaFaces").replaceChildren(...FACE_ROWS.map(([key, label]) => faceRow(key, label)));
+  $("singMode").onchange = () => { chara.singMode = $("singMode").value; if (chara.singMode === "anim" && !chara.singCount) chara.singCount = 1; charaChanged(); };
+  $("singFirst").onchange = () => { chara.singFirst = +$("singFirst").value; charaChanged(); };
+  $("singCount").onchange = () => { chara.singCount = Math.max(1, Math.min(999, Math.round(+$("singCount").value) || 1)); charaChanged(); };
+  $("singSync").onchange = () => { chara.singSync = +$("singSync").value; charaChanged(); };
+  $("singDelay").oninput = () => { chara.singDelay = +$("singDelay").value; $("singDelayOut").textContent = `${chara.singDelay}/30秒`; charaChanged(true); };
+  $("singUseLast").onclick = () => {
+    if (!lastAdded) return;
+    Object.assign(chara, { singMode: "anim", singFirst: lastAdded.start, singCount: lastAdded.count });
+    if (lastAdded.delay) chara.singDelay = Math.max(1, Math.min(30, lastAdded.delay));
+    charaChanged();
+    toast(`コマ ${lastAdded.start + 1}〜${lastAdded.start + lastAdded.count} を曲の間のアニメにしました`);
+  };
+  bindCharaUi();
+}
+function faceRow(key, label) {
+  {
+    const row = document.createElement("div"); row.className = "face-row";
+    row.innerHTML = `<label></label><select></select><canvas width="32" height="32" aria-hidden="true"></canvas>`;
+    const id = "cf_" + key;
+    row.querySelector("label").textContent = label; row.querySelector("label").htmlFor = id;
+    const sel = row.querySelector("select"); sel.id = id; sel.dataset.key = key;
+    sel.onchange = () => { charaSet(key, +sel.value); charaChanged(); };
+    return row;
+  }
+}
+function bindCharaUi() {
+  for (const sel of document.querySelectorAll("[data-btnsel]")) {
+    sel.append(new Option("使わない", ""), ...CHARA_BTNS.map(([k, nm]) => new Option(`${nm}ボタン`, k)));
+  }
+  $("charaOn").onchange = () => { chara.enabled = $("charaOn").checked; charaChanged(); };
+  $("charaDbl").onchange = () => { chara.dbl = $("charaDbl").value; charaChanged(); };
+  $("charaLong").onchange = () => { chara.long = $("charaLong").value; charaChanged(); };
+  for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => { if (chara.cmd.length < 8) { chara.cmd.push(b.dataset.cmd); charaChanged(); } };
+  $("charaCmdBack").onclick = () => { chara.cmd.pop(); charaChanged(); };
+  $("charaBase").onchange = () => { if ($("charaBase").value) chara.baseDate = $("charaBase").value; charaChanged(); };
+  $("charaFrom").onchange = () => { chara.countFrom = +$("charaFrom").value; charaChanged(); };
+  $("charaDaysY").oninput = () => { chara.daysY = +$("charaDaysY").value; $("charaDaysYOut").textContent = chara.daysY; charaChanged(true); };
+  for (const [id, key, lo, hi] of [["charaHold", "faceHold", 0.2, 30], ["charaShow", "show", 1, 60], ["charaDblWin", "dblWin", 0.1, 1.5], ["charaLongTime", "longTime", 0.3, 2.5], ["charaGap", "cmdGap", 0.3, 3]]) {
+    $(id).onchange = () => { const v = Math.max(lo, Math.min(hi, +$(id).value || chara[key])); $(id).value = v; chara[key] = v; charaChanged(); };
+  }
+  $("charaMakeBg").onclick = makeDaysBg;
+  $("charaSample").onclick = addSampleFaces;
+  // プレビューのボタン
+  for (const b of $("pad").querySelectorAll("button")) {
+    const bit = +b.dataset.b;
+    const on = (e) => { e.preventDefault(); padBits |= bit; padLatch |= bit; b.classList.add("on"); try { b.setPointerCapture(e.pointerId); } catch (er) { /* 古いブラウザ */ } audioCtx(); };
+    const off = () => { padBits &= ~bit; b.classList.remove("on"); };
+    b.addEventListener("pointerdown", on);
+    b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("lostpointercapture", off);
+    b.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  const KEYMAP = { ArrowUp: 16, ArrowDown: 8, ArrowLeft: 4, ArrowRight: 2, Enter: 1, " ": 1 };
+  window.addEventListener("keydown", (e) => {
+    if (!chara.enabled || !(e.key in KEYMAP) || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    e.preventDefault(); keyBits |= KEYMAP[e.key]; padLatch |= KEYMAP[e.key];
+  });
+  window.addEventListener("keyup", (e) => { if (e.key in KEYMAP) keyBits &= ~KEYMAP[e.key]; });
+}
+
+function renderChara() {
+  $("charaOn").checked = chara.enabled;
+  $("charaBody").hidden = !chara.enabled;
+  $("pad").hidden = !chara.enabled;
+  $("charaPrevNote").hidden = !chara.enabled;
+  $("animControls").hidden = chara.enabled;
+  $("fps").hidden = chara.enabled;
+  if (!chara.enabled) return;
+  const n = state.frames.length;
+  $("singMode").value = chara.singMode;
+  $("singRows").hidden = chara.singMode === "anim";
+  $("singRows").children[1].hidden = chara.singMode !== "faces";
+  $("singAnim").hidden = chara.singMode !== "anim";
+  $("singFirst").replaceChildren(...state.frames.map((_, i) => new Option(`コマ ${i + 1}`, i)));
+  $("singFirst").value = Math.min(chara.singFirst, n - 1);
+  $("singCount").value = chara.singCount; $("singSync").value = chara.singSync;
+  $("singDelay").value = chara.singDelay; $("singDelayOut").textContent = `${chara.singDelay}/30秒`;
+  $("singDelayField").hidden = chara.singSync !== 0;
+  $("singUseLast").disabled = !lastAdded;
+  if (chara.singMode === "anim") {
+    const strip = [];
+    const end = Math.min(n, chara.singFirst + chara.singCount);
+    for (let i = chara.singFirst; i < end && strip.length < 24; i++) { const c = document.createElement("canvas"); c.width = N; c.height = N; drawThumb(c, state.frames[i]); strip.push(c); }
+    if (end - chara.singFirst > 24) { const sp = document.createElement("span"); sp.className = "note"; sp.textContent = `ほか ${end - chara.singFirst - 24} コマ`; strip.push(sp); }
+    $("singStrip").replaceChildren(...strip);
+  }
+  for (const sel of [...$("charaFaces").querySelectorAll("select"), ...$("singRows").querySelectorAll("select")]) {
+    const key = sel.dataset.key, v = charaGet(key);
+    const opts = [];
+    if (key !== "idle") opts.push(new Option(key === "singA" ? "待機の顔" : key.endsWith("Bg") ? "なし (白)" : "なし", -1));
+    for (let i = 0; i < n; i++) opts.push(new Option(`コマ ${i + 1}`, i));
+    sel.replaceChildren(...opts);
+    sel.value = v < n ? v : (key === "idle" ? 0 : -1);
+    const cv = sel.parentElement.querySelector("canvas");
+    const f = state.frames[+sel.value];
+    if (f) drawThumb(cv, f); else cv.getContext("2d").clearRect(0, 0, 32, 32);
+    cv.style.visibility = f ? "visible" : "hidden";
+  }
+  $("charaDbl").value = chara.dbl; $("charaLong").value = chara.long;
+  $("charaCmdShow").textContent = chara.cmd.map((b) => CMD_MARK[b]).join(" ");
+  $("charaBase").value = chara.baseDate; $("charaFrom").value = chara.countFrom;
+  $("charaDaysY").value = chara.daysY; $("charaDaysYOut").textContent = chara.daysY;
+  $("charaHold").value = chara.faceHold; $("charaShow").value = chara.show; $("charaDblWin").value = chara.dblWin;
+  $("charaLongTime").value = chara.longTime; $("charaGap").value = chara.cmdGap;
+  $("charaInfo").textContent = chara.dbl && chara.cmd.some((b, i) => b === chara.dbl && chara.cmd[i + 1] === chara.dbl)
+    ? "コマンドが2回押しのボタンを続けて押すので、2回押しの時計は、続けて押されないか少し (2回押しの間隔ぶん) 待ってから出ます。" : "";
+  $("charaWarn").replaceChildren(...charaWarnings().map((t) => { const li = document.createElement("li"); li.textContent = t; return li; }));
+}
+
+function charaChanged(light) {
+  if (!light) renderChara();
+  charaEngine = null;           // 設定が変わったらプレビューを作り直す
+  if (musicFrom === "chara") stopMusic();
+  needLcd = true;
+  saveDraft();
+}
+
+/* コマを消したり動かしたりしたら、割り当ても合わせる */
+function charaRefs(fn) {
+  for (const k of ["idle", "blink", "clockBg", "daysBg", "singA", "singB", "singFirst"]) chara[k] = fn(chara[k]);
+  if (chara.singFirst < 0) chara.singFirst = 0;
+  chara.faces = chara.faces.map(fn);
+  if (chara.idle < 0) chara.idle = 0;
+}
+function charaFramesRemoved(i) { charaRefs((v) => (v === i ? -1 : v > i ? v - 1 : v)); }
+function charaFramesSwapped(i, j) { charaRefs((v) => (v === i ? j : v === j ? i : v)); }
+
+/* 見本の顔 (丸い顔。目と口だけ変える) */
+function sampleFace(eyes, mouth, extra) {
+  const f = blank();
+  const set = (x, y) => { if (x >= 0 && x < N && y >= 0 && y < N) f[y * N + x] = 1; };
+  for (let a = 0; a < 360; a += 2) {          // 輪郭
+    const r = a * Math.PI / 180;
+    set(Math.round(16 + 13.5 * Math.cos(r) - 0.5), Math.round(17 + 13 * Math.sin(r) - 0.5));
+  }
+  for (const ex of [10, 20]) {
+    if (eyes === "open") for (let y = 12; y <= 15; y++) { set(ex, y); set(ex + 1, y); }
+    else if (eyes === "closed") for (let x = ex - 1; x <= ex + 2; x++) set(x, 14);
+    else if (eyes === "happy") { set(ex - 1, 15); set(ex, 14); set(ex + 1, 14); set(ex + 2, 15); }
+    else if (eyes === "wide") { for (let y = 11; y <= 16; y++) { set(ex, y); set(ex + 1, y); } set(ex - 1, 13); set(ex + 2, 13); set(ex - 1, 14); set(ex + 2, 14); }
+  }
+  set(7, 19); set(8, 19); set(23, 19); set(24, 19);   // ほっぺ
+  const line = (x0, x1, y) => { for (let x = x0; x <= x1; x++) set(x, y); };
+  if (mouth === "smile") { line(13, 18, 22); set(12, 21); set(19, 21); }
+  else if (mouth === "grin") { line(12, 19, 20); for (let y = 21; y <= 23; y++) line(13 + (y - 21), 18 - (y - 21), y); }
+  else if (mouth === "o") { line(15, 16, 20); line(15, 16, 24); for (let y = 21; y <= 23; y++) { set(14, y); set(17, y); } }
+  else if (mouth === "sing1") { line(14, 17, 21); line(14, 17, 23); set(13, 22); set(18, 22); }
+  else if (mouth === "sing2") { line(14, 17, 20); line(14, 17, 25); for (let y = 21; y <= 24; y++) { set(13, y); set(18, y); } }
+  if (extra === "note") { for (let y = 2; y <= 7; y++) set(27, y); line(27, 29, 2); set(29, 3); set(25, 7); set(26, 7); set(25, 8); set(26, 8); }
+  if (extra === "sweat") { set(26, 9); set(26, 10); set(25, 11); set(27, 11); set(26, 12); }
+  return f;
+}
+function addSampleFaces() {
+  pushUndo();
+  const base = state.frames.length;
+  const list = [["open", "smile"], ["closed", "smile"], ["happy", "grin"], ["wide", "o", "sweat"], ["happy", "smile"], ["open", "sing1", "note"], ["closed", "sing2", "note"]];
+  for (const [e, m, x] of list) state.frames.push(sampleFace(e, m, x));
+  Object.assign(chara, { idle: base, blink: base + 1, faces: [base + 2, base + 4, base + 4, base + 3, base + 2], singA: base + 5, singB: base + 6, singMode: "faces" });
+  state.cur = base;
+  renderAll(); changed(); charaChanged();
+  toast("見本の顔を7枚足しました。下のボタンで試せます");
+}
+
+/* 日数画面の背景 (「公開から」と「日」) を新しいコマとして足す */
+const LABEL_GLYPHS = {
+  公: ["..#..#..", "..#..#..", ".#....#.", "#..#...#", "..#.....", ".#...#..", "######..", ".....##."],
+  開: ["###..###", "#.#..#.#", "###..###", "#.####.#", "#..#.#.#", "#.#####.", "#..#.#.#", "#.#..#.#"],
+  か: [".#......", ".#...#..", "####..#.", ".#.#...#", ".#.#...#", "#..#....", "#..#....", "#.##...."],
+  ら: ["..##....", "....#...", ".#......", ".#......", ".#.###..", ".##...#.", "......#.", "..####.."],
+  日: [".#####..", ".#...#..", ".#...#..", ".#####..", ".#...#..", ".#...#..", ".#####..", "........"],
+};
+function makeDaysBg() {
+  const f = blank();
+  const put = (ch, x0, y0) => LABEL_GLYPHS[ch].forEach((row, y) => [...row].forEach((c, x) => { if (c === "#") f[(y0 + y) * N + x0 + x] = 1; }));
+  [..."公開から"].forEach((ch, i) => put(ch, i * 8, 0));
+  put("日", 24, 24);
+  pushUndo();
+  state.frames.push(f);
+  state.cur = state.frames.length - 1;
+  chara.daysBg = state.frames.length - 1;
+  chara.daysY = 11;
+  renderAll(); changed(); charaChanged();
+  toast(`コマ ${state.frames.length} に日数画面の背景を作りました。ドット編集で直せます`);
+}
+
+/* ---- プレビュー: ポケステと同じ動き (chara.js) を 30Hz で動かす ---- */
+/* padLatch: 1tick より短いタップも1回は押したことにする */
+let charaEngine = null, padBits = 0, keyBits = 0, padLatch = 0, charaMode = "idle";
+function charaTick() {
+  if (!charaEngine) {
+    const words = pcharWords(chara);
+    const pmu = songHasNotes() ? { count: song.bars * 16, steplen: stepLen(song.bpm) } : null;
+    charaEngine = CharaEngine(Array.from(words), state.frames.map(frameToWords), pmu);
+  }
+  const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date()));
+  padLatch = 0;
+  if (r.event === "sing") startMusic(0, "chara", song, true);
+  if ((r.event === "stop" || r.event === "end") && musicFrom === "chara") stopMusic();
+  if (r.exit) {
+    if (musicFrom === "chara") stopMusic();
+    charaEngine = null; padBits = 0; keyBits = 0;
+    for (const b of $("pad").querySelectorAll("button")) b.classList.remove("on");
+    toast("ポケステの時計画面に戻ります (3秒押し続けた)");
+    return;
+  }
+  charaMode = r.mode;
+  drawLcd(wordsToFrame(r.fb));
+  $("count").textContent = { idle: "待機", clock: "日付と時計", days: "日数", sing: "曲" }[r.mode] || "";
 }
 
 /* ============================================================
@@ -3383,11 +4122,13 @@ function readmeText(name, blocks, hasMusic) {
     "project.json  ツールで続きを編集するための作品ファイル (「作品を開く」で読み込み)",
     "frames.png 全コマを横に並べた画像。",
     "",
-    "ポケステでの操作:",
-    "  決定(短押し) 一時停止/再開   決定(2秒長押し) 時計画面へ戻る",
-    "  右/左 アニメを速く/遅く   上 白黒反転",
-    "  下 再生中は曲を鳴らす/止める、一時停止中は1コマ送り",
-    "  (時計画面で消音にしていると最初は鳴りません。下ボタンで鳴らせます)",
+    ...(chara.enabled ? charaReadme() : [
+      "ポケステでの操作:",
+      "  決定(短押し) 一時停止/再開   決定(2秒長押し) 時計画面へ戻る",
+      "  右/左 アニメを速く/遅く   上 白黒反転",
+      "  下 再生中は曲を鳴らす/止める、一時停止中は1コマ送り",
+      "  (時計画面で消音にしていると最初は鳴りません。下ボタンで鳴らせます)",
+    ]),
     "",
   ].join("\r\n");
 }
@@ -3396,7 +4137,7 @@ $("saveZip").onclick = async () => {
   try {
     const name = saveName($("saveid").value);
     const pmu = songHasNotes() ? compileSong() : null;
-    const { data, blocks } = buildPocFile(state.frames, state.delay, $("title").value || "ドット絵アニメ", pmu);
+    const { data, blocks } = buildPocFile(state.frames, state.delay, $("title").value || "ドット絵アニメ", pmu, chara.enabled ? pcharWords(chara) : null);
     const png = await spritePng(1);
     const extra = pmu ? [{ name: "song.pmu", data: pmu }] : [];
     const zip = makeZip([
@@ -3424,13 +4165,13 @@ $("title").addEventListener("input", saveDraft);
 function projectJson() {
   const bytes = buildPda(state.frames, state.delay);
   let s = ""; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return JSON.stringify({ app: "pocketstation-dot-studio", version: 1, title: $("title").value, id: $("saveid").value, pda: btoa(s), song }, null, 1);
+  return JSON.stringify({ app: "pocketstation-dot-studio", version: 1, title: $("title").value, id: $("saveid").value, pda: btoa(s), song, chara }, null, 1);
 }
 function validSong(x) {
   if (!x || !Array.isArray(x.tracks) || x.tracks.length !== 4) return null;
   const s = newSong();
   s.bpm = Math.max(40, Math.min(240, +x.bpm || 120));
-  s.bars = Math.max(1, Math.min(32, +x.bars || 4));
+  s.bars = Math.max(1, Math.min(MAX_BARS, +x.bars || 4));
   s.key = Math.max(0, Math.min(11, +x.key || 0)); s.minor = !!x.minor;
   s.chords = typeof x.chords === "string" ? x.chords : "";
   s.isSample = !!x.isSample;
@@ -3449,11 +4190,12 @@ async function openProject(file) {
   try {
     const j = JSON.parse(await file.text());
     if (j.app !== "pocketstation-dot-studio" || !j.pda) throw new Error();
-    localStorage.setItem(STORE_KEY, JSON.stringify({ pda: j.pda, title: j.title, id: j.id, sample: false, song: j.song }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ pda: j.pda, title: j.title, id: j.id, sample: false, song: j.song, chara: j.chara }));
   } catch (e) { toast("作品ファイルとして読めませんでした"); return; }
   if (!loadDraft()) { toast("作品ファイルとして読めませんでした"); return; }
   stopMusic(); undoStack.length = 0; songUndo.length = 0;
   state.cur = 0; state.isSample = false; song.isSample = false;
+  charaEngine = null;
   renderAll(); renderMusic(); toast("作品を開きました");
 }
 $("saveProj").onclick = () => offerFile(`${(($("saveid").value || "anime").replace(/[^A-Za-z0-9_-]/g, "") || "anime").toLowerCase()}.json`, new Blob([projectJson()], { type: "application/json" }));
@@ -3467,7 +4209,7 @@ function saveDraft() {
     try {
       const bytes = buildPda(state.frames, state.delay);
       let s = ""; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-      localStorage.setItem(STORE_KEY, JSON.stringify({ pda: btoa(s), title: $("title").value, id: $("saveid").value, sample: state.isSample, song }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ pda: btoa(s), title: $("title").value, id: $("saveid").value, sample: state.isSample, song, chara }));
     } catch (e) { /* 保存できない環境 */ }
   }, 400);
 }
@@ -3485,6 +4227,7 @@ function loadDraft() {
     if (typeof j.id === "string") $("saveid").value = j.id;
     state.isSample = !!j.sample;
     song = validSong(j.song) || sampleSong();
+    chara = validChara(j.chara);
     return true;
   } catch (e) { return false; }
 }
@@ -3499,6 +4242,7 @@ function toast(msg) {
 buildMusicUi();
 buildScoreUi();
 buildMidiUi();
+buildCharaUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
 renderAll();
 renderMusic();
