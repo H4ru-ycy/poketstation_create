@@ -48,11 +48,30 @@ body {
 .top h1 .led { display: inline-block; width: 0.32em; height: 0.32em; border-radius: 50%; background: var(--accent); vertical-align: 0.4em; margin-left: 0.25em; box-shadow: 0 0 8px var(--accent); }
 .spec { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
 
-.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "export" "help"; }
+.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "score" "export" "help"; }
 @media (min-width: 900px) {
-  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "export help"; align-items: start; }
+  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "score score" "export help"; align-items: start; }
 }
-.music { grid-area: music; }
+.music { grid-area: music; } .score { grid-area: score; }
+.pages { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.pages figure { margin: 0; flex: 0 0 auto; display: grid; gap: 4px; justify-items: start; }
+.pages figure img { height: 88px; width: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.pages figcaption { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.pages figcaption button { min-height: 28px; padding: 0 8px; font-size: 12px; }
+.omr-view { display: grid; gap: 8px; }
+.omr-view canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.omr-parts { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .omr-parts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.omr-part { display: grid; gap: 6px; min-width: 0; }
+.omr-part header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.omr-part header b { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.omr-part header b i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+.omr-part header .row select { width: auto; }
+.omr-part textarea { font-size: 14px; }
+.warn-list { margin: 0; padding-left: 1.2em; font-size: 13px; color: var(--muted); }
+.warn-list:empty { display: none; }
 .stage { grid-area: stage; } .import { grid-area: import; } .edit { grid-area: edit; } .export { grid-area: export; } .help { grid-area: help; }
 section { min-width: 0; }
 
@@ -340,6 +359,41 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       </div>
     </section>
 
+    <!-- 楽譜から読み取り -->
+    <section class="score panel" id="scorePanel" aria-label="楽譜から読み取り">
+      <h2>楽譜から読み取り <small>五線譜の画像 → パートごとのドレミ</small></h2>
+      <p class="note">楽譜アプリや楽譜サイトの画面のスクリーンショット、印刷された楽譜をまっすぐ撮った写真に向いています。ピアノ譜 (ト音記号・ヘ音記号の2段) と1段の譜面を読めます。手書きや斜めの写真、歌詞が五線に重なる譜面はうまく読めません。</p>
+      <div class="row">
+        <label class="btn primary" for="omrFile">楽譜の画像を選ぶ<input id="omrFile" type="file" accept="image/*" multiple></label>
+        <span class="note" id="omrInfo">複数ページは曲の順に選んでください (あとから追加もできます)</span>
+      </div>
+      <div class="pages" id="omrPages" hidden></div>
+      <div class="fields">
+        <div class="field"><label for="omrBpm">テンポ (BPM)</label><input id="omrBpm" type="number" min="40" max="240" value="120" inputmode="numeric"></div>
+        <div class="field"><label for="omrMeter">拍子</label>
+          <select id="omrMeter"><option value="0">自動</option><option value="16">4/4</option><option value="12">3/4</option><option value="8">2/4</option><option value="12">6/8</option><option value="24">6/4・12/8</option></select></div>
+        <div class="field"><label for="omrFrom">作曲パネルに入れる範囲</label><select id="omrFrom"><option value="0">1小節目から</option></select></div>
+      </div>
+      <div class="row"><button id="omrRun" class="primary" type="button" disabled>読み取る</button><span class="note" id="omrStatus" role="status"></span></div>
+
+      <div class="omr-view" id="omrView" hidden>
+        <div class="legend"><span><i style="background:#d33"></i>上の段の音</span><span><i style="background:#2a6fdb"></i>下の段の音</span><span><i style="background:#1a9a4a"></i>小節線</span><span><i style="background:#f0a000"></i>拍の数が合わない小節</span></div>
+        <div id="omrCanvases" class="omr-view"></div>
+        <ul class="warn-list" id="omrWarn"></ul>
+      </div>
+
+      <div class="subpanel" id="omrOut" hidden>
+        <h3>パートごとのドレミ <small>書き換えてから作曲パネルに入れられます</small></h3>
+        <p class="note">分け方: メロディ = 上の段のいちばん高い音、ハモリ = 上の段の2番目の音、和音 = 下の段の和音の上の音 (無いときは上の段の3番目)、ベース = 下の段のいちばん低い音。ポケステは1パート1音なので、同時に鳴る音はこのように振り分けます。</p>
+        <div class="omr-parts" id="omrParts"></div>
+        <div class="row">
+          <button id="omrApply" class="primary" type="button">作曲パネルに入れる</button>
+          <button id="omrCopyAll" type="button">4パートまとめてコピー</button>
+        </div>
+        <p class="msg" id="omrMsg" role="status"></p>
+      </div>
+    </section>
+
     <!-- 書き出し -->
     <section class="export panel" aria-label="書き出し">
       <h2>ポケステ用に書き出す</h2>
@@ -410,6 +464,9 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<script>
+/*__OMR_JS__*/
+</script>
 <script>
 "use strict";
 /* ============================================================
@@ -1214,7 +1271,7 @@ const NAME_MAP = [["ファ", 5], ["ふぁ", 5], ["ド", 0], ["ど", 0], ["レ", 
 function parseDoremi(text, baseOct) {
   const t = text.normalize("NFKC");
   const notes = [];
-  let i = 0, pos = 0, defLen = 4, oct = baseOct, last = null;
+  let i = 0, pos = 0, defLen = 4, oct = baseOct, last = null, afterRest = false;
   const fail = (msg) => ({ error: `${i + 1}文字目: ${msg}` });
   function readLen() {
     const m = /^(\d+)(\.?)/.exec(t.slice(i));
@@ -1237,19 +1294,21 @@ function parseDoremi(text, baseOct) {
     if (ch === ">") { oct++; i++; continue; }
     if (ch === "<") { oct--; i++; continue; }
     if (/[ー\-~]/.test(ch)) {
-      if (!last) return fail("「ー」の前に音符がありません");
-      last.l += LEN_STEPS[defLen]; pos += LEN_STEPS[defLen]; i++; continue;
+      if (!last && !afterRest) return fail("「ー」の前に音符がありません");
+      if (last) last.l += LEN_STEPS[defLen];
+      pos += LEN_STEPS[defLen]; i++; continue;
     }
     if (ch === "&") {
       i++;
-      if (!last) return fail("「&」の前に音符がありません");
+      if (!last && !afterRest) return fail("「&」の前に音符がありません");
       const L = readLen(); if (!L) return fail("長さが読めません");
-      last.l += L; pos += L; continue;
+      if (last) last.l += L;
+      pos += L; continue;
     }
     if ((m = /^(休|ウ|う|R|r|・|ッ|っ)/.exec(t.slice(i)))) {
       i += m[0].length;
       const L = readLen(); if (!L) return fail("休符の長さが読めません");
-      pos += L; last = null; continue;
+      pos += L; last = null; afterRest = true; continue;
     }
     const found = NAME_MAP.find(([nm]) => t.startsWith(nm, i));
     if (!found) return fail(`「${ch}」が読めません`);
@@ -1266,7 +1325,7 @@ function parseDoremi(text, baseOct) {
     const L = readLen(); if (!L) return fail("長さは 1,2,4,8,16 (付点は 4. など)");
     const midi = 12 * (o + 1) + pc;
     if (midi < 24 || midi > 96) return fail(`${midiName(midi)} は音域の外です`);
-    last = { s: pos, l: L, n: midi }; notes.push(last); pos += L;
+    last = { s: pos, l: L, n: midi }; notes.push(last); pos += L; afterRest = false;
   }
   return { notes, steps: pos };
 }
@@ -1621,6 +1680,264 @@ function sampleSong() {
 }
 
 /* ============================================================
+ * 楽譜から読み取り: 画像 → OMR → 4パートのドレミ
+ * ============================================================ */
+const omr = { pages: [], result: null, raw: null, shift: [0, 0, 0, 0] };
+const OMR_MAX_STEPS = 32 * 16;
+
+function loadScoreImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      // 読み取りに向いた大きさにそろえる (五線の間隔が 8〜20 ドットくらい)
+      let k = 1;
+      if (w > 2400) k = 2400 / w; else if (w < 800) k = Math.min(2, 1200 / w);
+      w = Math.round(w * k); h = Math.round(h * k);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.fillStyle = "#fff"; g.fillRect(0, 0, w, h);       // 透明部分は白
+      g.imageSmoothingQuality = "high";
+      g.drawImage(img, 0, 0, w, h);
+      resolve({ name: file.name, url, data: g.getImageData(0, 0, w, h), canvas: c });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`${file.name} を画像として読めません`)); };
+    img.src = url;
+  });
+}
+
+function renderOmrPages() {
+  const box = $("omrPages");
+  box.hidden = !omr.pages.length;
+  box.replaceChildren(...omr.pages.map((p, i) => {
+    const f = document.createElement("figure");
+    const im = document.createElement("img"); im.src = p.url; im.alt = `${i + 1}ページ目`;
+    const cap = document.createElement("figcaption");
+    cap.append(`${i + 1}`);
+    const mk = (label, aria, fn, dis) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-label", aria); b.disabled = dis; b.onclick = fn; return b; };
+    cap.append(
+      mk("←", "前へ", () => { [omr.pages[i - 1], omr.pages[i]] = [omr.pages[i], omr.pages[i - 1]]; renderOmrPages(); }, i === 0),
+      mk("→", "後ろへ", () => { [omr.pages[i + 1], omr.pages[i]] = [omr.pages[i], omr.pages[i + 1]]; renderOmrPages(); }, i === omr.pages.length - 1),
+      mk("×", "外す", () => { URL.revokeObjectURL(p.url); omr.pages.splice(i, 1); renderOmrPages(); }, false));
+    f.append(im, cap);
+    return f;
+  }));
+  $("omrRun").disabled = !omr.pages.length;
+  $("omrInfo").textContent = omr.pages.length ? `${omr.pages.length}ページ (左から順に読みます)` : "複数ページは曲の順に選んでください (あとから追加もできます)";
+}
+
+/* 同時に鳴る音を4つのパートに振り分ける */
+function splitScoreParts(notes) {
+  const at = new Map();
+  for (const n of notes) {
+    const k = n.st + ":" + n.t;
+    if (!at.has(k)) at.set(k, []);
+    at.get(k).push(n);
+  }
+  const parts = [[], [], [], []], lowerTimes = new Set();
+  for (const [k, list] of at) if (k[0] === "1") lowerTimes.add(+k.slice(2));
+  for (const [k, list] of at) {
+    const st = +k[0], t = +k.slice(2);
+    const hi = list.slice().sort((a, b) => b.n - a.n);
+    if (st === 0) {
+      parts[0].push(hi[0]);
+      if (hi[1]) parts[1].push(hi[1]);
+      if (hi[2]) parts[2].push({ ...hi[2], weak: true });
+    } else {
+      parts[3].push(hi[hi.length - 1]);
+      if (hi.length >= 2) parts[2].push(hi[0]);
+    }
+  }
+  // 1パート1音: 同じ時刻は1つ (和音パートは下の段を優先)、次の音が来たら前の音を切る
+  return parts.map((p) => {
+    p.sort((a, b) => a.t - b.t || (a.weak ? 1 : 0) - (b.weak ? 1 : 0));
+    const out = [];
+    for (const n of p) {
+      const prev = out[out.length - 1];
+      if (prev && prev.s === n.t) continue;
+      if (prev && prev.s + prev.l > n.t) prev.l = n.t - prev.s;
+      out.push({ s: n.t, l: n.d, n: n.n });
+    }
+    return out.filter((n) => n.l > 0);
+  });
+}
+
+function fitRange(m) { while (m < 24) m += 12; while (m > 96) m -= 12; return m; }
+
+function omrPartText(t) {
+  const notes = omr.raw[t].map((n) => ({ ...n, n: fitRange(n.n + 12 * omr.shift[t]) }));
+  return notesToDoremi(notes, TRACK_DEF[t].oct);
+}
+
+function buildOmrParts() {
+  const box = $("omrParts");
+  box.replaceChildren(...TRACK_DEF.map((d, t) => {
+    const el = document.createElement("div"); el.className = "omr-part";
+    el.style.setProperty("--dot", `var(--t${t + 1})`);
+    el.innerHTML = `<header><b><i aria-hidden="true"></i><span></span><small class="note"></small></b><div class="row">
+      <select aria-label="オクターブ"><option value="-2">2オクターブ下げる</option><option value="-1">1オクターブ下げる</option><option value="0" selected>そのまま</option><option value="1">1オクターブ上げる</option><option value="2">2オクターブ上げる</option></select>
+      <button type="button">コピー</button></div></header>
+      <textarea rows="4" spellcheck="false" autocapitalize="off"></textarea>`;
+    el.querySelector("span").textContent = d.name;
+    el.querySelector("small").textContent = omr.raw[t].length ? `${omr.raw[t].length}音` : "なし";
+    const ta = el.querySelector("textarea"), sel = el.querySelector("select");
+    ta.setAttribute("aria-label", `${d.name}のドレミ`);
+    ta.value = omrPartText(t);
+    sel.value = omr.shift[t];
+    sel.onchange = () => { omr.shift[t] = +sel.value; ta.value = omrPartText(t); };
+    el.querySelector("button").onclick = () => copyText(ta.value, `${d.name}をコピーしました`);
+    return el;
+  }));
+}
+
+function copyText(text, done) {
+  const fallback = () => {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    ta.remove(); toast(ok ? done : "コピーできませんでした。文字を長押しして選んでください");
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast(done), fallback);
+  else fallback();
+}
+
+function drawOmrOverlay(res) {
+  const box = $("omrCanvases");
+  box.replaceChildren();
+  const warnSet = new Set(res.warnings.map((w) => w.measure));
+  omr.pages.forEach((pg, pi) => {
+    const src = pg.canvas, k = Math.min(1, 1400 / src.width);
+    const c = document.createElement("canvas");
+    c.width = Math.round(src.width * k); c.height = Math.round(src.height * k);
+    c.setAttribute("aria-label", `${pi + 1}ページ目の読み取り結果`);
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.globalAlpha = 0.45; g.drawImage(src, 0, 0, c.width, c.height); g.globalAlpha = 1;
+    g.scale(k, k);
+    res.measures.forEach((m, mi) => {
+      if (m.page !== pi) return;
+      const pad = m.s * 2.5;
+      if (warnSet.has(mi)) { g.fillStyle = "rgba(240,160,0,0.22)"; g.fillRect(m.x0, m.top - pad, m.x1 - m.x0, m.bot - m.top + 2 * pad); }
+      g.fillStyle = "#1a9a4a"; g.fillRect(m.x0 - 1, m.top - m.s, Math.max(2, 1.5 / k), m.bot - m.top + 2 * m.s);
+      g.font = `700 ${Math.max(11, m.s * 1.3) / Math.max(k, 0.5)}px system-ui, sans-serif`;
+      g.fillText(String(mi + 1), m.x0 + 2, m.top - m.s * 1.4);
+      m.parts.forEach((p, pk) => {
+        g.strokeStyle = pk === 0 ? "#d33" : "#2a6fdb"; g.lineWidth = Math.max(2, m.s * 0.22);
+        for (const e of p) for (const hh of e.heads || []) {
+          g.beginPath(); g.ellipse(hh.h.x, hh.h.y, m.s * 0.75, m.s * 0.6, 0, 0, Math.PI * 2); g.stroke();
+        }
+      });
+    });
+    box.append(c);
+  });
+  const ul = $("omrWarn");
+  ul.replaceChildren(...res.warnings.slice(0, 30).map((w) => {
+    const li = document.createElement("li");
+    li.textContent = `${w.measure + 1}小節目: 拍の合計が ${w.total / 4}拍 (${w.len / 4}拍のはず)。読み落としや読み違いがあるかもしれません`;
+    return li;
+  }));
+  if (res.warnings.length > 30) { const li = document.createElement("li"); li.textContent = `ほか ${res.warnings.length - 30}小節`; ul.append(li); }
+}
+
+function runOmr() {
+  if (!omr.pages.length) return;
+  $("omrStatus").textContent = "読み取り中…";
+  $("omrRun").disabled = true;
+  setTimeout(() => {
+    let res;
+    try {
+      res = OMR.read(omr.pages.map((p) => p.data), { measureLen: +$("omrMeter").value || 0 });
+    } catch (e) {
+      $("omrStatus").textContent = "読み取りに失敗しました: " + e.message; $("omrRun").disabled = false; return;
+    }
+    $("omrRun").disabled = false;
+    omr.result = res;
+    $("omrView").hidden = false;
+    drawOmrOverlay(res);
+    if (!res.measures.length || !res.notes.length) {
+      $("omrStatus").textContent = "五線や音符が見つかりませんでした。楽譜の部分がはっきり写った画像を使ってください";
+      $("omrOut").hidden = true; return;
+    }
+    omr.raw = splitScoreParts(res.notes);
+    omr.shift = [0, 0, 0, 0];
+    const two = res.measures.some((m) => m.staves >= 2);
+    $("omrStatus").textContent = `${res.measures.length}小節 ・ ${res.notes.length}音 ・ 1小節 ${res.measureLen / 4}拍として読みました` +
+      (res.warnings.length ? ` (確認したい小節 ${res.warnings.length})` : "") + (two ? "" : " ・ 1段の譜面なのでベースは空です");
+    const sel = $("omrFrom");
+    sel.replaceChildren(...res.measures.map((m, i) => {
+      const o = document.createElement("option"); o.value = m.start;
+      const endBar = res.measures.findIndex((x) => x.start >= m.start + OMR_MAX_STEPS);
+      o.textContent = `${i + 1}小節目から` + (endBar > 0 ? ` (${endBar}小節目まで)` : "");
+      return o;
+    }));
+    buildOmrParts();
+    $("omrOut").hidden = false;
+    $("omrMsg").textContent = "";
+  }, 30);
+}
+
+function applyOmrToSong() {
+  const tas = [...$("omrParts").querySelectorAll("textarea")];
+  const from = +$("omrFrom").value || 0;
+  const parsed = [];
+  for (let t = 0; t < 4; t++) {
+    const r = parseDoremi(tas[t].value, TRACK_DEF[t].oct);
+    if (r.error) { $("omrMsg").textContent = `${TRACK_DEF[t].name}: ${r.error}`; return; }
+    parsed.push(r.notes.filter((n) => n.s >= from && n.s < from + OMR_MAX_STEPS)
+      .map((n) => ({ s: n.s - from, l: Math.min(n.l, from + OMR_MAX_STEPS - n.s), n: n.n })));
+  }
+  const end = Math.max(0, ...parsed.flat().map((n) => n.s + n.l));
+  if (!end) { $("omrMsg").textContent = "この範囲に音符がありません"; return; }
+  stopMusic();
+  pushSongUndo();
+  const bpm = Math.max(40, Math.min(240, Math.round(+$("omrBpm").value || 120)));
+  song.bpm = bpm;
+  song.bars = Math.min(32, Math.ceil(end / 16));
+  song.isSample = false;
+  const firstKey = omr.result.measures.find((m) => m.start >= from) || omr.result.measures[0];
+  const fifths = (firstKey.keys && firstKey.keys[0]) || 0;
+  song.key = ((fifths * 7) % 12 + 12) % 12; song.minor = false;
+  for (let t = 0; t < 4; t++) {
+    const tr = song.tracks[t];
+    tr.notes = parsed[t]; tr.mute = false;
+    if (tr.notes.length) {   // ピアノロールの表示をパートの音域に合わせる
+      const mid = Math.round(tr.notes.reduce((a, n) => a + n.n, 0) / tr.notes.length);
+      tr.low = Math.max(24, Math.min(96 - ROWS + 1, mid - 12));
+    }
+  }
+  songChanged();
+  const cut = parsed.flat().length < tas.reduce((a, ta, t) => a + (parseDoremi(ta.value, TRACK_DEF[t].oct).notes || []).length, 0);
+  $("omrMsg").textContent = "";
+  toast(`作曲パネルに入れました (${song.bars}小節 / BPM ${bpm})` + (cut ? "。32小節を超えた分は入っていません" : ""));
+  document.querySelector(".music").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function buildScoreUi() {
+  $("omrFile").addEventListener("change", async (e) => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    if (!files.length) return;
+    $("omrStatus").textContent = "画像を読み込み中…";
+    for (const f of files) {
+      try { omr.pages.push(await loadScoreImage(f)); }
+      catch (err) { toast(err.message); }
+    }
+    $("omrStatus").textContent = "";
+    renderOmrPages();
+  });
+  $("omrRun").onclick = runOmr;
+  $("omrApply").onclick = applyOmrToSong;
+  $("omrCopyAll").onclick = () => {
+    const tas = [...$("omrParts").querySelectorAll("textarea")];
+    copyText(TRACK_DEF.map((d, t) => `【${d.name}】\n${tas[t].value}`).join("\n\n"), "4パートをコピーしました");
+  };
+  $("omrBpm").addEventListener("change", () => {
+    const v = Math.max(40, Math.min(240, Math.round(+$("omrBpm").value || 120)));
+    $("omrBpm").value = v;
+  });
+}
+
+/* ============================================================
  * 保存・書き出し
  * ============================================================ */
 let downloads = null;
@@ -1787,6 +2104,7 @@ function toast(msg) {
 
 /* 起動 */
 buildMusicUi();
+buildScoreUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
 renderAll();
 renderMusic();

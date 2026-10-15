@@ -78,7 +78,7 @@ clean:
 
 # スマホ用の変換ツール (再生プログラム埋め込み済みの単体HTML)
 converter: build/dot-studio.html
-build/dot-studio.html: converter/converter.src.html build/player.bin tools/embed_player.py
+build/dot-studio.html: converter/converter.src.html converter/omr.js build/player.bin tools/embed_player.py
 	python3 tools/embed_player.py $< build/player.bin $@
 
 .PHONY: converter
