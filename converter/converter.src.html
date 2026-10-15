@@ -48,14 +48,27 @@ body {
 .top h1 .led { display: inline-block; width: 0.32em; height: 0.32em; border-radius: 50%; background: var(--accent); vertical-align: 0.4em; margin-left: 0.25em; box-shadow: 0 0 8px var(--accent); }
 .spec { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
 
-.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "score" "export" "help"; }
+.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "import" "edit" "music" "midi" "score" "export" "help"; }
 @media (min-width: 900px) {
-  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "score score" "export help"; align-items: start; }
+  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "midi midi" "score score" "export help"; align-items: start; }
 }
 .music { grid-area: music; }
 .bpm-row { display: flex; gap: 10px; align-items: center; }
 .bpm-row input[type=number] { width: 5.5em; flex: none; font-variant-numeric: tabular-nums; font-size: 16px; }
-.bpm-row input[type=range] { flex: 1 1 auto; min-width: 0; } .score { grid-area: score; }
+.bpm-row input[type=range] { flex: 1 1 auto; min-width: 0; }
+.score { grid-area: score; }
+.midi { grid-area: midi; }
+.midi-body { display: grid; gap: 14px; min-width: 0; }
+.midi-ov-wrap { display: grid; gap: 6px; min-width: 0; }
+.midi-ov-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--roll-white); overscroll-behavior-x: contain; }
+#midiOv { display: block; cursor: pointer; }
+.midi-map { display: grid; gap: 12px; }
+.midi-map .mp { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.midi-map .mp b { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.midi-map .mp b i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); flex: none; }
+.midi-map .mp .sels { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 6px; }
+@media (max-width: 600px) { .midi-map .mp { grid-template-columns: minmax(0, 1fr); } .midi-map .mp .sels { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .midi-map .mp .sels select:first-child { grid-column: 1 / -1; } }
+.midi-src { margin: 6px 0 0; padding-left: 1.2em; font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
 .pages { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
 .pages figure { margin: 0; flex: 0 0 auto; display: grid; gap: 4px; justify-items: start; }
 .pages figure img { height: 88px; width: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
@@ -396,6 +409,41 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           <button id="omrCopyAll" type="button">4パートまとめてコピー</button>
         </div>
         <p class="msg" id="omrMsg" role="status"></p>
+      </div>
+    </section>
+
+    <!-- MIDIから読み込み -->
+    <section class="midi panel" id="midiPanel" aria-label="MIDIから読み込み">
+      <h2>MIDIから読み込み <small>好きな範囲を切り取って4パートに</small></h2>
+      <div class="row">
+        <label class="btn primary" for="midiFile">MIDIファイルを選ぶ<input id="midiFile" type="file"></label>
+        <span class="note" id="midiInfo">.mid / .midi (スタンダードMIDIファイル)</span>
+      </div>
+      <div id="midiBody" hidden class="midi-body">
+        <div class="midi-ov-wrap">
+          <div class="midi-ov-scroll" id="midiOvScroll"><canvas id="midiOv" aria-label="曲全体の音符。タップした小節から切り取ります"></canvas></div>
+          <p class="note">曲全体の音符です。タップした小節が切り取りの始まりになります。色の帯が切り取る範囲です。</p>
+        </div>
+        <div class="fields">
+          <div class="field"><label for="midiStart">はじめ (小節)</label><input id="midiStart" type="number" min="1" value="1" inputmode="numeric"></div>
+          <div class="field"><label for="midiBeat">はじめ (拍)</label><select id="midiBeat"></select></div>
+          <div class="field"><label for="midiLen">長さ (小節・32まで)</label><input id="midiLen" type="number" min="1" max="32" value="8" inputmode="numeric"></div>
+          <div class="field"><label for="midiBpm">テンポ (BPM)</label><input id="midiBpm" type="number" min="40" max="240" value="120" inputmode="numeric"></div>
+        </div>
+        <p class="note" id="midiRange"></p>
+        <div class="subpanel">
+          <h3>パートの割り当て <small>どのトラックのどの音をポケステの4音に使うか</small></h3>
+          <div class="midi-map" id="midiMap"></div>
+          <details>
+            <summary class="note">MIDIのトラック一覧</summary>
+            <ul class="midi-src" id="midiSrcList"></ul>
+          </details>
+        </div>
+        <div class="row">
+          <button id="midiPlay" type="button">切り取った部分を試聴</button>
+          <button id="midiApply" class="primary" type="button">作曲パネルに入れる</button>
+        </div>
+        <p class="msg" id="midiMsg" role="status"></p>
       </div>
     </section>
 
@@ -1224,13 +1272,13 @@ function audioCtx() {
   if (actx.state === "suspended") actx.resume();
   return actx;
 }
-function startMusic(offset = 0, from = "music") {
+function startMusic(offset = 0, from = "music", sg = song) {
   stopMusic(true);
   const ctx = audioCtx();
   if (!ctx) { toast("この端末のブラウザでは音を鳴らせません"); return false; }
-  if (!songHasNotes()) { toast("曲に音符がありません"); updateMusicUi(); return false; }
-  const pmu = compileSong();
-  const sl = stepLen(song.bpm), total = totalSteps() * sl;
+  if (!songHasNotes(sg)) { toast("曲に音符がありません"); updateMusicUi(); return false; }
+  const pmu = compileSong(sg);
+  const sl = stepLen(sg.bpm), total = sg.bars * 16 * sl;
   const raw = renderPmu(pmu, total);
   const sr = ctx.sampleRate, len = Math.ceil(total * sr / SND_RATE);
   const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
@@ -1252,7 +1300,7 @@ function stopMusic(quiet) {
 const musicPos = () => (actx && musicSrc ? (actx.currentTime - musicT0) % musicLoop : 0);
 let restartTimer = 0;
 function restartIfPlaying() {
-  if (!musicSrc) return;
+  if (!musicSrc || musicFrom === "midi") return;
   clearTimeout(restartTimer);
   const pos = musicPos(), from = musicFrom;
   restartTimer = setTimeout(() => { if (musicSrc) startMusic(pos, from); }, 120);
@@ -1678,12 +1726,16 @@ function buildMusicUi() {
 }
 
 function updateMusicUi() {
-  $("mPlay").textContent = musicSrc ? "曲を止める" : "曲を再生";
-  $("playhead").hidden = !musicSrc;
+  const midi = musicSrc && musicFrom === "midi";
+  $("mPlay").textContent = musicSrc && !midi ? "曲を止める" : "曲を再生";
+  $("playhead").hidden = !musicSrc || midi;
+  if ($("midiPlay")) $("midiPlay").textContent = midi ? "試聴を止める" : "切り取った部分を試聴";
+  if (!midi) midiHead = -1;
 }
 
 function tickMusicUi() {
   if (!musicSrc) return;
+  if (musicFrom === "midi") { tickMidiHead(); return; }
   const x = musicPos() * SND_RATE / musicSL * CELL_W;
   $("playhead").style.transform = `translateX(${x}px)`;
   const sc = $("rollScroll");
@@ -1702,6 +1754,338 @@ function sampleSong() {
   song.tracks[3].notes = makeBass("octave", list);
   for (let t = 0; t < 4; t++) song.tracks[t].text = notesToDoremi(song.tracks[t].notes, TRACK_DEF[t].oct);
   return s;
+}
+
+/* ============================================================
+ * MIDIから読み込み: スタンダードMIDIファイル → 範囲を切り取り → 4パート
+ * ============================================================ */
+function parseMidi(buf) {
+  const u = new Uint8Array(buf);
+  const find = (tag, from) => {
+    for (let i = from; i + 4 <= u.length; i++) if (u[i] === tag.charCodeAt(0) && u[i + 1] === tag.charCodeAt(1) && u[i + 2] === tag.charCodeAt(2) && u[i + 3] === tag.charCodeAt(3)) return i;
+    return -1;
+  };
+  const be32 = (o) => ((u[o] << 24) | (u[o + 1] << 16) | (u[o + 2] << 8) | u[o + 3]) >>> 0;
+  const be16 = (o) => (u[o] << 8) | u[o + 1];
+  const h = find("MThd", 0);           // RMID (RIFF) に包まれていても探す
+  if (h < 0 || h > 64) throw new Error("MIDIファイルではありません");
+  const ntrk = be16(h + 10), div = be16(h + 12);
+  let ppq = div;
+  if (div & 0x8000) ppq = Math.max(1, ((256 - (div >> 8)) * (div & 0xFF)) / 2);   // SMPTE: 120BPMとみなす
+  if (!ppq) throw new Error("MIDIの分解能が読めません");
+  const notes = [], tempos = [], sigs = [], names = {};
+  let o = h + 8 + be32(h + 4);
+  for (let t = 0; t < ntrk; t++) {
+    const m = find("MTrk", o);
+    if (m < 0) break;
+    const end = Math.min(u.length, m + 8 + be32(m + 4));
+    let p = m + 8, tick = 0, run = 0;
+    const open = new Map();
+    const vlq = () => { let v = 0, b; do { b = u[p++]; v = (v << 7) | (b & 0x7F); } while (b & 0x80 && p < end); return v; };
+    while (p < end) {
+      tick += vlq();
+      let st = u[p];
+      if (st & 0x80) { p++; if (st < 0xF0) run = st; } else st = run;
+      if (st === 0xFF) {
+        const type = u[p++], len = vlq(), d = u.subarray(p, p + len); p += len;
+        if (type === 0x51 && len >= 3) tempos.push({ tick, us: (d[0] << 16) | (d[1] << 8) | d[2] });
+        else if (type === 0x58 && len >= 2) sigs.push({ tick, num: d[0], den: 1 << d[1] });
+        else if (type === 0x03 && !names[t]) { try { names[t] = new TextDecoder("utf-8", { fatal: true }).decode(d).trim(); } catch (e) { try { names[t] = new TextDecoder("shift_jis").decode(d).trim(); } catch (e2) { /* 読めない名前 */ } } }
+        else if (type === 0x2F) break;
+      } else if (st === 0xF0 || st === 0xF7) { const len = vlq(); p += len; }
+      else if (st >= 0x80) {
+        const hi = st & 0xF0, ch = st & 0x0F;
+        if (hi === 0xC0 || hi === 0xD0) { p += 1; continue; }
+        const a = u[p], b = u[p + 1]; p += 2;
+        if (hi !== 0x80 && hi !== 0x90) continue;
+        const key = ch * 128 + a;
+        if (hi === 0x90 && b > 0) {
+          if (!open.has(key)) open.set(key, []);
+          open.get(key).push({ trk: t, ch, n: a, tick, vel: b });
+        } else {
+          const q = open.get(key);
+          if (q && q.length) { const nt = q.shift(); nt.end = tick; if (nt.end > nt.tick) notes.push(nt); }
+        }
+      } else p++;   // 壊れたデータは1バイト飛ばす
+    }
+    for (const q of open.values()) for (const nt of q) { nt.end = nt.tick + ppq; notes.push(nt); }
+    o = end;
+  }
+  if (!notes.length) throw new Error("音符が入っていません");
+  tempos.sort((a, b) => a.tick - b.tick); sigs.sort((a, b) => a.tick - b.tick);
+  // 16分音符 (ステップ) に合わせる
+  const step = (tk) => Math.round(tk * 4 / ppq);
+  const ev = notes.map((nt) => { const s = step(nt.tick); return { src: nt.trk * 16 + nt.ch, trk: nt.trk, ch: nt.ch, n: nt.n, s, l: Math.max(1, step(nt.end) - s) }; });
+  const last = Math.max(...ev.map((e) => e.s + e.l));
+  // 小節の頭 (拍子の変更にも合わせる)
+  const bars = [];
+  let pos = 0, si = 0, num = 4, den = 4;
+  const sigAt = sigs.map((x) => ({ s: step(x.tick), num: x.num || 4, den: x.den || 4 }));
+  while (pos < last && bars.length < 2000) {
+    while (si < sigAt.length && sigAt[si].s <= pos) { num = sigAt[si].num; den = sigAt[si].den; si++; }
+    const len = Math.max(1, Math.round(num * 16 / den));
+    bars.push({ s: pos, len, num, den });
+    pos += len;
+  }
+  const tempoAt = (s) => { let us = 500000; for (const x of tempos) if (step(x.tick) <= s) us = x.us; return 60e6 / us; };
+  // トラック (トラック番号×チャンネル) ごとのまとめ
+  const srcMap = new Map();
+  for (const e of ev) {
+    if (!srcMap.has(e.src)) srcMap.set(e.src, { id: e.src, trk: e.trk, ch: e.ch, notes: [], name: names[e.trk] || "" });
+    srcMap.get(e.src).notes.push(e);
+  }
+  const sources = [...srcMap.values()].map((x) => {
+    const on = new Map();
+    for (const e of x.notes) on.set(e.s, (on.get(e.s) || 0) + 1);
+    const avg = x.notes.reduce((a, e) => a + e.n, 0) / x.notes.length;
+    return { ...x, drum: x.ch === 9, avg, lo: Math.min(...x.notes.map((e) => e.n)), hi: Math.max(...x.notes.map((e) => e.n)),
+      poly: [...on.values()].filter((c) => c > 1).length / on.size };
+  }).sort((a, b) => a.trk - b.trk || a.ch - b.ch);
+  return { sources, bars, last, tempoAt, tempoChanges: new Set(tempos.map((x) => Math.round(60e6 / x.us))).size };
+}
+
+const midi = { data: null, map: [], name: "" };
+let midiHead = -1, midiBase = null;
+const MIDI_RULES = [["top", "いちばん高い音"], ["2nd", "2番目に高い音"], ["3rd", "3番目に高い音"], ["low", "いちばん低い音"]];
+const MIDI_BW = 16, MIDI_OVH = 132;
+
+function midiSrcLabel(x) {
+  const nm = x.name || `トラック${x.trk + 1}`;
+  return `${nm} (ch${x.ch + 1}${x.drum ? "・ドラム" : ""})`;
+}
+
+function autoMidiMap(sources) {
+  const mel = sources.filter((x) => !x.drum && x.notes.length >= 4).sort((a, b) => b.avg - a.avg);
+  const pool = mel.length ? mel : sources.filter((x) => !x.drum);
+  const none = { src: -1, rule: "top", oct: 0 };
+  if (!pool.length) return [none, none, none, none].map((x) => ({ ...x }));
+  if (pool.length === 1) {
+    const s = pool[0], poly = s.poly > 0.3;
+    return [{ src: s.id, rule: "top", oct: 0 }, poly ? { src: s.id, rule: "2nd", oct: 0 } : { ...none },
+      poly ? { src: s.id, rule: "3rd", oct: 0 } : { ...none }, poly ? { src: s.id, rule: "low", oct: 0 } : { ...none }];
+  }
+  const top = pool[0], bass = pool[pool.length - 1];
+  const rest = pool.slice(1, -1).sort((a, b) => b.notes.length - a.notes.length);
+  const map = [{ src: top.id, rule: "top", oct: 0 }, null, null, { src: bass.id, rule: "low", oct: 0 }];
+  if (top.poly > 0.25) map[1] = { src: top.id, rule: "2nd", oct: 0 };
+  else if (rest.length) map[1] = { src: rest.shift().id, rule: "top", oct: 0 };
+  const harmSrc = map[1] && map[1].src !== top.id ? pool.find((x) => x.id === map[1].src) : null;
+  if (rest.length) map[2] = { src: rest.shift().id, rule: "top", oct: 0 };
+  else if (harmSrc && harmSrc.poly > 0.25) map[2] = { src: harmSrc.id, rule: "2nd", oct: 0 };
+  else if (bass.poly > 0.25) map[2] = { src: bass.id, rule: "top", oct: 0 };
+  else if (top.poly > 0.25) map[2] = { src: top.id, rule: "3rd", oct: 0 };
+  return map.map((x) => x || { ...none });
+}
+
+/* 切り取る範囲 (ステップ) */
+function midiCut() {
+  const d = midi.data, nb = d.bars.length;
+  const b0 = Math.max(1, Math.min(nb, Math.round(+$("midiStart").value) || 1)) - 1;
+  const bar = d.bars[b0];
+  const beat = Math.max(0, Math.min(bar.num - 1, (+$("midiBeat").value || 1) - 1));
+  const start = bar.s + Math.round(beat * 16 / bar.den);
+  const lenBars = Math.max(1, Math.min(32, Math.round(+$("midiLen").value) || 8));
+  // 長さは MIDI の小節で数える (3/4 なら1小節 = 16分音符12個)
+  let span = 0;
+  for (let i = 0; i < lenBars; i++) { const bb = d.bars[b0 + i] || d.bars[d.bars.length - 1]; span += bb.len; }
+  const capped = span > OMR_MAX_STEPS;
+  span = Math.min(span, OMR_MAX_STEPS);
+  return { b0, start, end: start + span, lenBars, steps: span, capped };
+}
+
+/* 1つのトラックから、決めたルールで1音ずつ取り出す */
+function midiPart(m, cut) {
+  if (m.src < 0) return [];
+  const x = midi.data.sources.find((q) => q.id === m.src);
+  if (!x) return [];
+  const at = new Map();
+  for (const e of x.notes) {
+    if (e.s < cut.start || e.s >= cut.end) continue;
+    if (!at.has(e.s)) at.set(e.s, []);
+    at.get(e.s).push(e);
+  }
+  const out = [];
+  for (const s of [...at.keys()].sort((a, b) => a - b)) {
+    const list = at.get(s).slice().sort((a, b) => b.n - a.n);
+    const pick = m.rule === "top" ? list[0] : m.rule === "2nd" ? list[1] : m.rule === "3rd" ? list[2] : list[list.length - 1];
+    if (!pick) continue;
+    const prev = out[out.length - 1];
+    if (prev && prev.s + prev.l > s - cut.start) prev.l = s - cut.start - prev.s;
+    out.push({ s: s - cut.start, l: Math.min(pick.l, cut.end - s), n: fitRange(pick.n + 12 * m.oct) });
+  }
+  return out.filter((n) => n.l > 0);
+}
+
+function midiSong() {
+  const cut = midiCut(), sg = newSong();
+  sg.bpm = Math.max(40, Math.min(240, Math.round(+$("midiBpm").value) || 120));
+  sg.bars = Math.max(1, Math.min(32, Math.ceil(cut.steps / 16)));
+  midi.map.forEach((m, t) => { sg.tracks[t].notes = midiPart(m, cut); });
+  return { sg, cut };
+}
+
+function drawMidiOverview() {
+  const d = midi.data, c = $("midiOv"), dpr = window.devicePixelRatio || 1;
+  const W = Math.max($("midiOvScroll").clientWidth - 2, d.bars.length * MIDI_BW), H = MIDI_OVH;
+  const stepW = W / (d.bars[d.bars.length - 1].s + d.bars[d.bars.length - 1].len);
+  c.style.width = W + "px"; c.style.height = H + "px";
+  c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = cssVar("--roll-white"); g.fillRect(0, 0, W, H);
+  const srcs = d.sources.filter((x) => !x.drum);
+  const lo = Math.min(...srcs.map((x) => x.lo), 127) - 1, hi = Math.max(...srcs.map((x) => x.hi), 0) + 1;
+  const top = 16, ph = (H - top - 4) / Math.max(12, hi - lo);
+  g.font = `10px ${getComputedStyle(document.body).fontFamily}`; g.textBaseline = "top";
+  d.bars.forEach((b, i) => {
+    const x = b.s * stepW;
+    g.fillStyle = i % 4 === 0 ? cssVar("--roll-bar") : cssVar("--roll-grid");
+    g.fillRect(x, top, 1, H - top);
+    if (i % 4 === 0) { g.fillStyle = cssVar("--muted"); g.fillText(String(i + 1), x + 2, 2); }
+  });
+  const color = new Map();
+  midi.map.forEach((m, t) => { if (m.src >= 0 && !color.has(m.src)) color.set(m.src, trackColor(t)); });
+  for (const x of d.sources) {
+    if (x.drum) continue;
+    g.fillStyle = color.get(x.id) || cssVar("--roll-beat");
+    for (const e of x.notes) g.fillRect(e.s * stepW, top + (hi - e.n) * ph, Math.max(1, e.l * stepW - 0.5), Math.max(1.5, ph));
+  }
+  midiBase = { stepW, W, H, top };
+  const cut = midiCut();
+  g.fillStyle = cssVar("--accent"); g.globalAlpha = 0.14;
+  g.fillRect(cut.start * stepW, top, (cut.end - cut.start) * stepW, H - top);
+  g.globalAlpha = 1; g.fillRect(cut.start * stepW, top, 2, H - top); g.fillRect(cut.end * stepW - 2, top, 2, H - top);
+  midiBase.img = g.getImageData(0, 0, c.width, c.height);
+}
+
+function tickMidiHead() {
+  if (!midiBase || !midi.data) return;
+  const cut = midiCut(), x = (cut.start + musicPos() * SND_RATE / musicSL) * midiBase.stepW;
+  if (Math.abs(x - midiHead) < 0.5) return;
+  midiHead = x;
+  const c = $("midiOv"), g = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  g.putImageData(midiBase.img, 0, 0);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = cssVar("--ink"); g.fillRect(x, midiBase.top, 2, midiBase.H - midiBase.top);
+  const sc = $("midiOvScroll");
+  if (x < sc.scrollLeft || x > sc.scrollLeft + sc.clientWidth - 20) sc.scrollLeft = Math.max(0, x - 20);
+}
+
+function renderMidiRange() {
+  const d = midi.data, cut = midiCut();
+  const b = d.bars[cut.b0];
+  const beatSel = $("midiBeat");
+  if (beatSel.options.length !== b.num) {
+    const keep = Math.min(b.num, +beatSel.value || 1);
+    beatSel.replaceChildren(...Array.from({ length: b.num }, (_, i) => { const o = document.createElement("option"); o.value = i + 1; o.textContent = `${i + 1}拍目`; return o; }));
+    beatSel.value = keep;
+  }
+  const endBar = d.bars.findIndex((x) => x.s >= cut.end);
+  const counts = midi.map.map((m) => midiPart(m, cut).length);
+  $("midiRange").textContent = `${cut.b0 + 1}小節目${+$("midiBeat").value > 1 ? `の${$("midiBeat").value}拍目` : ""}から ${cut.lenBars}小節ぶん` +
+    (cut.capped ? " (ポケステの曲は16分音符512個までなので、そこで切ります)" : "") +
+    (endBar > 0 ? ` (${endBar}小節目まで)` : " (曲の終わりまで)") + ` ・ 音符 ${TRACK_DEF.map((t, i) => `${t.name}${counts[i]}`).join(" / ")}` +
+    (d.bars.some((x) => x.len !== 16) ? " ・ 4/4以外の拍子は、作曲パネルでは4/4の小節線で表示されます (音のタイミングはそのまま)" : "");
+  drawMidiOverview();
+  if (musicSrc && musicFrom === "midi") playMidiCut(true);
+}
+
+function buildMidiMap() {
+  const d = midi.data;
+  $("midiMap").replaceChildren(...TRACK_DEF.map((td, t) => {
+    const row = document.createElement("div"); row.className = "mp";
+    row.style.setProperty("--dot", `var(--t${t + 1})`);
+    row.innerHTML = `<b><i aria-hidden="true"></i><span></span></b><div class="sels"><select></select><select></select><select></select></div>`;
+    row.querySelector("span").textContent = td.name;
+    const [sSrc, sRule, sOct] = row.querySelectorAll("select");
+    sSrc.setAttribute("aria-label", `${td.name}に使うトラック`); sRule.setAttribute("aria-label", `${td.name}に使う音`); sOct.setAttribute("aria-label", `${td.name}のオクターブ`);
+    const opt = (v, txt) => { const o = document.createElement("option"); o.value = v; o.textContent = txt; return o; };
+    sSrc.append(opt(-1, "使わない"), ...d.sources.map((x) => opt(x.id, midiSrcLabel(x))));
+    sRule.append(...MIDI_RULES.map(([v, txt]) => opt(v, txt)));
+    sOct.append(opt(-2, "2オクターブ下"), opt(-1, "1オクターブ下"), opt(0, "そのまま"), opt(1, "1オクターブ上"), opt(2, "2オクターブ上"));
+    const m = midi.map[t];
+    sSrc.value = m.src; sRule.value = m.rule; sOct.value = m.oct;
+    sRule.disabled = m.src < 0; sOct.disabled = m.src < 0;
+    const upd = () => { m.src = +sSrc.value; m.rule = sRule.value; m.oct = +sOct.value; sRule.disabled = sOct.disabled = m.src < 0; renderMidiRange(); };
+    sSrc.onchange = upd; sRule.onchange = upd; sOct.onchange = upd;
+    return row;
+  }));
+  $("midiSrcList").replaceChildren(...d.sources.map((x) => {
+    const li = document.createElement("li");
+    li.textContent = `${midiSrcLabel(x)}: ${x.notes.length}音、${midiName(x.lo)}〜${midiName(x.hi)}` + (x.poly > 0.25 ? "、和音あり" : "");
+    return li;
+  }));
+}
+
+async function loadMidiFile(file) {
+  $("midiMsg").textContent = "";
+  try {
+    const d = parseMidi(await file.arrayBuffer());
+    if (musicFrom === "midi") stopMusic();
+    midi.data = d; midi.name = file.name;
+    midi.map = autoMidiMap(d.sources);
+    $("midiBody").hidden = false;
+    $("midiStart").max = d.bars.length; $("midiStart").value = 1;
+    $("midiBeat").replaceChildren();
+    $("midiLen").value = Math.min(32, d.bars.length);
+    const first = d.sources.flatMap((x) => x.notes).reduce((a, e) => Math.min(a, e.s), Infinity);
+    $("midiBpm").value = Math.max(40, Math.min(240, Math.round(d.tempoAt(first))));
+    $("midiInfo").textContent = `${file.name}: ${d.bars.length}小節、トラック${d.sources.length}つ、テンポ ${Math.round(d.tempoAt(first))}` +
+      (d.tempoChanges > 1 ? " (途中でテンポが変わる曲です。ポケステでは1つのテンポで鳴らします)" : "");
+    buildMidiMap();
+    renderMidiRange();
+    $("midiOvScroll").scrollLeft = 0;
+  } catch (e) {
+    $("midiBody").hidden = true; midi.data = null;
+    $("midiInfo").textContent = `${file.name} を読めませんでした: ${e.message}`;
+  }
+}
+
+function playMidiCut(restart) {
+  if (!restart && musicSrc && musicFrom === "midi") { stopMusic(); drawMidiOverview(); return; }
+  const { sg } = midiSong();
+  if (!songHasNotes(sg)) { if (!restart) toast("切り取った範囲に音符がありません"); stopMusic(); return; }
+  startMusic(0, "midi", sg);
+}
+
+function applyMidiToSong() {
+  const { sg, cut } = midiSong();
+  if (!songHasNotes(sg)) { $("midiMsg").textContent = "切り取った範囲に音符がありません。はじめの小節か割り当てを変えてください"; return; }
+  stopMusic();
+  pushSongUndo();
+  song.bpm = sg.bpm; song.bars = sg.bars; song.chords = ""; song.isSample = false;
+  for (let t = 0; t < 4; t++) {
+    const tr = song.tracks[t];
+    tr.notes = sg.tracks[t].notes; tr.mute = false;
+    if (tr.notes.length) {
+      const mid = Math.round(tr.notes.reduce((a, n) => a + n.n, 0) / tr.notes.length);
+      tr.low = Math.max(24, Math.min(96 - ROWS + 1, mid - 12));
+    }
+  }
+  songChanged();
+  $("midiMsg").textContent = "";
+  toast(`作曲パネルに入れました (${cut.b0 + 1}小節目から${cut.lenBars}小節 / BPM ${song.bpm})`);
+  document.querySelector(".music").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function buildMidiUi() {
+  $("midiFile").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadMidiFile(f); });
+  const clampNum = (el, lo, hi, def) => { const v = Math.max(lo, Math.min(hi, Math.round(+el.value) || def)); el.value = v; };
+  $("midiStart").addEventListener("change", () => { clampNum($("midiStart"), 1, midi.data.bars.length, 1); $("midiBeat").replaceChildren(); renderMidiRange(); });
+  $("midiStart").addEventListener("input", () => { const v = +$("midiStart").value; if (v >= 1 && v <= midi.data.bars.length) { $("midiBeat").replaceChildren(); renderMidiRange(); } });
+  $("midiBeat").addEventListener("change", renderMidiRange);
+  $("midiLen").addEventListener("change", () => { clampNum($("midiLen"), 1, 32, 8); renderMidiRange(); });
+  $("midiLen").addEventListener("input", () => { const v = +$("midiLen").value; if (v >= 1 && v <= 32) renderMidiRange(); });
+  $("midiBpm").addEventListener("change", () => { clampNum($("midiBpm"), 40, 240, 120); if (musicSrc && musicFrom === "midi") playMidiCut(true); });
+  for (const id of ["midiStart", "midiLen", "midiBpm"]) $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") $(id).blur(); });
+  $("midiOv").addEventListener("click", (e) => {
+    if (!midi.data || !midiBase) return;
+    const r = $("midiOv").getBoundingClientRect(), s = (e.clientX - r.left) / midiBase.stepW;
+    let b = 0; while (b + 1 < midi.data.bars.length && midi.data.bars[b + 1].s <= s) b++;
+    $("midiStart").value = b + 1; $("midiBeat").replaceChildren(); renderMidiRange();
+  });
+  $("midiPlay").onclick = () => playMidiCut(false);
+  $("midiApply").onclick = applyMidiToSong;
+  window.addEventListener("resize", () => { if (midi.data && !$("midiBody").hidden) drawMidiOverview(); });
 }
 
 /* ============================================================
@@ -2130,6 +2514,7 @@ function toast(msg) {
 /* 起動 */
 buildMusicUi();
 buildScoreUi();
+buildMidiUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
 renderAll();
 renderMusic();
