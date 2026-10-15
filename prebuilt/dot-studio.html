@@ -295,6 +295,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       <div class="controls">
         <button id="mPlay" class="primary" type="button">曲を再生</button>
         <button id="mUndo" type="button" disabled>元に戻す</button>
+        <button id="mNew" type="button">まっさらにする</button>
       </div>
       <div class="fields">
         <div class="field"><label for="bpm">テンポ (BPM) <output id="bpmOut">120</output></label><input id="bpm" type="range" min="40" max="240" value="120"></div>
@@ -2627,6 +2628,15 @@ function buildMusicUi() {
     songChanged();
   });
   $("chords").addEventListener("input", () => { song.chords = $("chords").value; saveDraft(); });
+  $("mNew").onclick = () => {
+    stopMusic();
+    pushSongUndo();
+    const bpm = song.bpm;
+    song = newSong(); song.bpm = bpm;
+    $("chordMsg").textContent = ""; $("mmlMsg").textContent = "";
+    songChanged();
+    toast("曲を全部消しました (「元に戻す」で戻せます)");
+  };
   $("mPlay").onclick = () => { if (musicSrc) stopMusic(); else startMusic(0, "music"); };
   $("sndPrev").onclick = () => {
     const on = $("sndPrev").getAttribute("aria-pressed") !== "true";
@@ -2877,7 +2887,7 @@ function applyOmrToSong() {
   const bpm = Math.max(40, Math.min(240, Math.round(+$("omrBpm").value || 120)));
   song.bpm = bpm;
   song.bars = Math.min(32, Math.ceil(end / 16));
-  song.isSample = false;
+  song.isSample = false; song.chords = "";
   const firstKey = omr.result.measures.find((m) => m.start >= from) || omr.result.measures[0];
   const fifths = (firstKey.keys && firstKey.keys[0]) || 0;
   song.key = ((fifths * 7) % 12 + 12) % 12; song.minor = false;
