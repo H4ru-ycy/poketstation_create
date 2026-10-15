@@ -83,6 +83,7 @@ font:
 test: build/anime.mcr
 	python3 tests/test_player.py build/anime.bin 0
 	python3 tests/test_chara.py build/player.bin 0
+	node tests/test_card.js build/anime.mcr build/anime.bin BISLPSP00000TEST2
 
 clean:
 	rm -rf build
@@ -91,7 +92,7 @@ clean:
 
 # スマホ用の変換ツール (再生プログラム埋め込み済みの単体HTML)
 converter: build/dot-studio.html
-build/dot-studio.html: converter/converter.src.html converter/omr.js converter/font.js converter/chara.js build/player.bin tools/embed_player.py
+build/dot-studio.html: converter/converter.src.html converter/omr.js converter/font.js converter/chara.js converter/card.js build/player.bin tools/embed_player.py
 	python3 tools/embed_player.py $< build/player.bin $@
 
 .PHONY: converter

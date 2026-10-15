@@ -10,7 +10,7 @@ b64 = base64.b64encode(open(player, "rb").read()).decode()
 assert "__PLAYER_B64__" in html
 html = html.replace("__PLAYER_B64__", b64)
 here = os.path.dirname(os.path.abspath(src))
-for mark, name in (("/*__OMR_JS__*/", "omr.js"), ("/*__FONT_JS__*/", "font.js"), ("/*__CHARA_JS__*/", "chara.js")):
+for mark, name in (("/*__OMR_JS__*/", "omr.js"), ("/*__FONT_JS__*/", "font.js"), ("/*__CHARA_JS__*/", "chara.js"), ("/*__CARD_JS__*/", "card.js")):
     if mark in html:
         js = open(os.path.join(here, name), encoding="utf-8").read()
         assert "</script" not in js, name

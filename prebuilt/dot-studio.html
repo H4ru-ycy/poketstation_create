@@ -49,16 +49,28 @@ body {
 .top h1 .led { display: inline-block; width: 0.32em; height: 0.32em; border-radius: 50%; background: var(--accent); vertical-align: 0.4em; margin-left: 0.25em; box-shadow: 0 0 8px var(--accent); }
 .spec { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
 
-.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "chara" "import" "edit" "music" "midi" "score" "export" "help"; }
+.layout { display: grid; gap: 20px; grid-template-columns: 1fr; grid-template-areas: "stage" "chara" "import" "edit" "music" "midi" "score" "export" "card" "help"; }
 @media (min-width: 900px) {
-  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "chara chara" "music music" "midi midi" "score score" "export help"; align-items: start; }
+  .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "chara chara" "music music" "midi midi" "score score" "export help" "card card"; align-items: start; }
 }
 .music { grid-area: music; }
 .bpm-row { display: flex; gap: 10px; align-items: center; }
 .bpm-row input[type=number] { width: 5.5em; flex: none; font-variant-numeric: tabular-nums; font-size: 16px; }
 .bpm-row input[type=range] { flex: 1 1 auto; min-width: 0; }
 .score { grid-area: score; }
-.chara { grid-area: chara; }
+.chara { grid-area: chara; } .card { grid-area: card; }
+.blocks { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); gap: 3px; }
+.blocks div { height: 30px; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); display: grid; place-items: center; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.blocks div.mine { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.saves, .backups { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.saves li, .backups li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 10px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.backups li { grid-template-columns: minmax(0, 1fr); }
+.saves canvas { width: 32px; height: 32px; image-rendering: pixelated; border-radius: 3px; grid-row: span 2; }
+.saves b, .backups b { font-size: 14px; overflow-wrap: anywhere; }
+.saves small, .backups small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.saves .row, .backups .row { grid-column: 1 / -1; }
+.saves .row button, .backups .row button { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+.saves i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
 .pad { display: grid; grid-template-columns: repeat(3, 56px) 1fr 76px; grid-template-rows: repeat(3, 44px); gap: 6px; align-items: center; justify-items: center; width: min(100%, 340px); margin-inline: auto; user-select: none; -webkit-user-select: none; touch-action: none; }
 .pad button { width: 100%; height: 100%; min-height: 0; padding: 0; font-size: 18px; border-radius: 10px; background: #3a4046; color: #e9edf0; border-color: #4a5158; -webkit-touch-callout: none; }
 .pad button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -581,6 +593,38 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         <li><code>project.json</code><span>作品ファイル。「作品を開く」で続きを編集できます</span></li>
         <li><code>frames.png</code><span>全コマを横に並べた画像 (1倍)</span></li>
       </ul>
+    </section>
+
+    <!-- メモリーカード -->
+    <section class="card panel" id="cardPanel" aria-label="メモリーカード">
+      <h2>メモリーカード <small>手持ちのカード (.mcr) に追加・セーブの管理・バックアップ</small></h2>
+      <p class="note">ポケステやメモリーカードの中身をまるごと吸い出した .mcr を開くと、今あるセーブを残したまま、作った作品を空きブロックに追加できます。書き込む前に、必ず元のカードのバックアップを取っておいてください。</p>
+      <div class="row">
+        <label class="btn primary" for="cardFile">カード (.mcr) を開く<input id="cardFile" type="file"></label>
+        <button type="button" id="cardNew">空のカードから始める</button>
+      </div>
+      <div id="cardBody" hidden class="midi-body">
+        <p class="note" id="cardInfo"></p>
+        <div class="blocks" id="cardBlocks" aria-label="15ブロックの使いかた"></div>
+        <ul class="saves" id="cardSaves"></ul>
+        <ul class="warn" id="cardWarn"></ul>
+        <div class="row">
+          <button type="button" id="cardAddWork" class="primary">今の作品をこのカードに追加</button>
+          <label class="btn" for="cardAddMcs">セーブ (.mcs) を追加<input id="cardAddMcs" type="file"></label>
+        </div>
+        <p class="note">同じファイル名のセーブがあれば置き換えます (ファイル名は「書き出し」の欄で変えられます)。</p>
+        <div class="row">
+          <button type="button" id="cardExport" class="primary">カードを書き出す (.mcr)</button>
+          <button type="button" id="cardUndo" disabled>元に戻す</button>
+        </div>
+        <p class="msg" id="cardMsg" role="status"></p>
+      </div>
+      <div class="subpanel">
+        <h3>バックアップ <small>この端末のブラウザに保存 (20件まで)</small></h3>
+        <p class="note">カードを開いたときと、書き出すときに自動で保存します。開いているカードの内容 (追加や削除をしたあと) も、この端末に自動で残ります。ブラウザのデータを消すと消えるので、大事なものは「ダウンロード」でファイルにしてください。</p>
+        <div class="row"><button type="button" id="cardBackupNow" disabled>今のカードをバックアップ</button></div>
+        <ul class="backups" id="cardBackups"></ul>
+      </div>
     </section>
 
     <!-- 使い方 -->
@@ -1846,6 +1890,157 @@ function rtcFromDate(dt) {
   };
 }
 if (typeof module !== "undefined") module.exports = { CharaEngine, rtcFromDate, PCHR, CHARA_NONE, CHARA_BTN };
+
+/* ============================================================
+ * card.js - PS メモリーカード (.mcr 128KB) の読み書き
+ *   ポケステのフラッシュも同じ並び: 8KB × 16 ブロック。ブロック0 が管理情報。
+ *   管理情報: 0x80 バイトのフレーム。0 = "MC"、1-15 = 各ブロックのディレクトリ。
+ *     +00 状態 (51h=先頭, 52h=途中, 53h=最後, A0h=空き, A1h-A3h=消したもの)
+ *     +04 ファイルの大きさ (先頭だけ)  +08 次のブロック (番号-1, FFFFh=終わり)
+ *     +0A ファイル名 (20文字まで)      +7F それまでの XOR
+ * ============================================================ */
+const CARD_SIZE = 0x20000, CARD_BLOCK = 0x2000;
+
+function cardXor(f) { let c = 0; for (let i = 0; i < 0x7F; i++) c ^= f[i]; return c; }
+function cardFrame(card, i) { return card.subarray(i * 0x80, (i + 1) * 0x80); }
+
+/* 空のカード (tools/mkpoc.py の build_mcr と同じ並び) */
+function cardBlank() {
+  const card = new Uint8Array(CARD_SIZE);
+  card.fill(0xFF, 0, CARD_BLOCK);
+  const head = new Uint8Array(0x80); head[0] = 0x4D; head[1] = 0x43; head[0x7F] = cardXor(head);
+  card.set(head, 0); card.set(head, 63 * 0x80);
+  for (let i = 1; i < 16; i++) cardSetDir(card, i, 0xA0, 0, 0xFFFF, "");
+  for (let i = 16; i < 36; i++) {
+    const f = new Uint8Array(0x80); new DataView(f.buffer).setUint32(0, 0xFFFFFFFF, true); f[0x7F] = cardXor(f);
+    card.set(f, i * 0x80);
+  }
+  card.fill(0, CARD_BLOCK);
+  return card;
+}
+
+function cardSetDir(card, i, st, size, next, name) {
+  const f = new Uint8Array(0x80), v = new DataView(f.buffer);
+  v.setUint32(0, st, true); v.setUint32(4, size, true); v.setUint16(8, next, true);
+  for (let k = 0; k < Math.min(20, name.length); k++) f[0x0A + k] = name.charCodeAt(k) & 0x7F;
+  f[0x7F] = cardXor(f);
+  card.set(f, i * 0x80);
+}
+
+/* 読み取り: { saves: [{name, first, blocks:[...], size, title, ok}], free: [...], warnings: [] } */
+function cardParse(card) {
+  if (!(card instanceof Uint8Array) || card.length !== CARD_SIZE) throw new Error("メモリーカードのイメージ (128KB の .mcr) ではありません");
+  if (card[0] !== 0x4D || card[1] !== 0x43) throw new Error("メモリーカードのイメージではありません (先頭が MC ではない)");
+  const dir = [], warnings = [];
+  for (let i = 1; i < 16; i++) {
+    const f = cardFrame(card, i), v = new DataView(f.buffer, f.byteOffset, 0x80);
+    let name = "";
+    for (let k = 0; k < 20 && f[0x0A + k]; k++) name += String.fromCharCode(f[0x0A + k]);
+    dir[i] = { st: v.getUint32(0, true) & 0xFF, size: v.getUint32(4, true), next: v.getUint16(8, true), name, sumOk: cardXor(f) === f[0x7F] };
+  }
+  const used = new Set(), saves = [];
+  for (let i = 1; i < 16; i++) {
+    if (dir[i].st !== 0x51) continue;
+    const blocks = [i];
+    let b = i, ok = true;
+    while (dir[b].next !== 0xFFFF) {
+      const nb = dir[b].next + 1;
+      if (nb < 1 || nb > 15 || blocks.includes(nb) || ![0x52, 0x53].includes(dir[nb].st)) { ok = false; break; }
+      blocks.push(nb); b = nb;
+    }
+    if (blocks.length > 1 && dir[b].st !== 0x53) ok = false;
+    if (dir[i].size && dir[i].size !== blocks.length * CARD_BLOCK) ok = false;
+    blocks.forEach((x) => used.add(x));
+    const blk = card.subarray(i * CARD_BLOCK, (i + 1) * CARD_BLOCK);
+    saves.push({ name: dir[i].name, first: i, blocks, size: dir[i].size, ok, title: cardTitle(blk), pocket: blk[0x52] === 0x4D && blk[0x53] === 0x43 && blk[0x54] === 0x58 });
+    if (!ok) warnings.push(`${dir[i].name || "名前なし"} のつながりがおかしいです`);
+  }
+  const free = [];
+  for (let i = 1; i < 16; i++) {
+    if (used.has(i)) continue;
+    if ([0x52, 0x53].includes(dir[i].st)) warnings.push(`ブロック ${i} はどのセーブにもつながっていません (空きとして扱います)`);
+    free.push(i);
+  }
+  for (let i = 1; i < 16; i++) if (!dir[i].sumOk) warnings.push(`ブロック ${i} の管理情報のチェックサムが合いません`);
+  return { saves, free, warnings };
+}
+
+/* セーブのタイトル (Shift-JIS 64バイト) */
+function cardTitle(blk) {
+  if (blk[0] !== 0x53 || blk[1] !== 0x43) return "";
+  let end = 4; while (end < 68 && blk[end]) end++;
+  try { return new TextDecoder("shift_jis").decode(blk.subarray(4, end)).replace(/　+$/, ""); }
+  catch (e) { return ""; }
+}
+
+/* セーブの中身 (ブロックをつながりの順に) */
+function cardSaveData(card, save) {
+  const out = new Uint8Array(save.blocks.length * CARD_BLOCK);
+  save.blocks.forEach((b, k) => out.set(card.subarray(b * CARD_BLOCK, (b + 1) * CARD_BLOCK), k * CARD_BLOCK));
+  return out;
+}
+
+/* .mcs (ディレクトリ1フレーム + 中身) */
+function cardSaveMcs(card, save) {
+  const data = cardSaveData(card, save), out = new Uint8Array(0x80 + data.length);
+  const f = new Uint8Array(0x80), v = new DataView(f.buffer);
+  v.setUint32(0, 0x51, true); v.setUint32(4, data.length, true); v.setUint16(8, 0xFFFF, true);
+  for (let k = 0; k < Math.min(20, save.name.length); k++) f[0x0A + k] = save.name.charCodeAt(k);
+  f[0x7F] = cardXor(f);
+  out.set(f); out.set(data, 0x80);
+  return out;
+}
+function cardParseMcs(u8) {
+  if (u8.length < 0x80 + CARD_BLOCK || (u8.length - 0x80) % CARD_BLOCK || u8[0] !== 0x51) throw new Error(".mcs (セーブ1件) の形式ではありません");
+  let name = ""; for (let k = 0; k < 20 && u8[0x0A + k]; k++) name += String.fromCharCode(u8[0x0A + k]);
+  return { name, data: u8.slice(0x80) };
+}
+
+/* 消す: ディレクトリを空きにして、中身を 0 にする */
+function cardDelete(card, first) {
+  const out = card.slice(), p = cardParse(card);
+  const s = p.saves.find((x) => x.first === first);
+  if (!s) throw new Error("そのセーブはありません");
+  for (const b of s.blocks) { cardSetDir(out, b, 0xA0, 0, 0xFFFF, ""); out.fill(0, b * CARD_BLOCK, (b + 1) * CARD_BLOCK); }
+  return out;
+}
+
+/* 足す: 同じ名前があれば置き換える。空きブロック (できればつながった所) に書く */
+function cardAdd(card, name, data) {
+  if (!data.length || data.length % CARD_BLOCK) throw new Error("セーブの大きさが 8KB 単位ではありません");
+  let out = card.slice();
+  const old = cardParse(out).saves.find((x) => x.name === name);
+  if (old) out = cardDelete(out, old.first);
+  const n = data.length / CARD_BLOCK, free = cardParse(out).free;
+  if (free.length < n) throw new Error(`空きが足りません (${n}ブロック必要、空き ${free.length}ブロック)`);
+  let pick = null;
+  for (let k = 0; k + n <= free.length && !pick; k++) if (free[k + n - 1] - free[k] === n - 1) pick = free.slice(k, k + n);
+  if (!pick) pick = free.slice(0, n);
+  pick.forEach((b, k) => {
+    const st = n === 1 || k === 0 ? 0x51 : k === n - 1 ? 0x53 : 0x52;
+    cardSetDir(out, b, st, k === 0 ? n * CARD_BLOCK : 0, k < n - 1 ? pick[k + 1] - 1 : 0xFFFF, k === 0 ? name : "");
+    out.set(data.subarray(k * CARD_BLOCK, (k + 1) * CARD_BLOCK), b * CARD_BLOCK);
+  });
+  return { card: out, replaced: !!old, blocks: pick };
+}
+
+/* セーブのアイコン (16x16, 16色) を RGBA で */
+function cardIconRgba(card, save) {
+  const blk = card.subarray(save.first * CARD_BLOCK, save.first * CARD_BLOCK + 0x100);
+  if (blk[0] !== 0x53 || blk[1] !== 0x43) return null;
+  const pal = [];
+  for (let i = 0; i < 16; i++) {
+    const c = blk[0x60 + i * 2] | (blk[0x61 + i * 2] << 8);
+    pal.push([(c & 31) * 255 / 31, ((c >> 5) & 31) * 255 / 31, ((c >> 10) & 31) * 255 / 31]);
+  }
+  const out = new Uint8ClampedArray(16 * 16 * 4);
+  for (let p = 0; p < 256; p++) {
+    const v = (blk[0x80 + (p >> 1)] >> ((p & 1) * 4)) & 15, c = pal[v];
+    out.set([c[0], c[1], c[2], 255], p * 4);
+  }
+  return out;
+}
+if (typeof module !== "undefined") module.exports = { cardBlank, cardParse, cardAdd, cardDelete, cardSaveData, cardSaveMcs, cardParseMcs, cardIconRgba, CARD_SIZE, CARD_BLOCK };
 
 </script>
 <script>
@@ -4070,6 +4265,205 @@ function charaTick() {
 }
 
 /* ============================================================
+ * メモリーカード: 手持ちの .mcr に追加・セーブの管理・バックアップ (card.js)
+ * ============================================================ */
+const cardState = { bytes: null, name: "", undo: [] };
+
+/* ---- この端末に残す (IndexedDB)。使えない環境でも、ほかの機能は動く ---- */
+const cardDb = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      let rq;
+      try { rq = indexedDB.open("poc-dot-studio-cards", 1); } catch (e) { rej(e); return; }
+      rq.onupgradeneeded = () => rq.result.createObjectStore("cards", { keyPath: "key" });
+      rq.onsuccess = () => { this.db = rq.result; res(this.db); };
+      rq.onerror = () => rej(rq.error);
+    });
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction("cards", mode), st = t.objectStore("cards");
+      const r = fn(st);
+      t.oncomplete = () => res(r && "result" in r ? r.result : undefined);
+      t.onerror = () => rej(t.error);
+    });
+  },
+  put(v) { return this.tx("readwrite", (st) => st.put(v)); },
+  get(k) { return this.tx("readonly", (st) => st.get(k)); },
+  del(k) { return this.tx("readwrite", (st) => st.delete(k)); },
+  all() { return this.tx("readonly", (st) => st.getAll()); },
+};
+const CARD_BACKUP_MAX = 20;
+
+function cardSummary(bytes) {
+  try { const p = cardParse(bytes); return p.saves.map((x) => x.title || x.name).join(" / ") + ` ・ 空き ${p.free.length}ブロック`; }
+  catch (e) { return ""; }
+}
+async function cardBackup(bytes, name, why) {
+  try {
+    const at = new Date();
+    await cardDb.put({ key: "bk-" + at.getTime(), at: at.toISOString(), name, why, bytes: bytes.slice(), summary: cardSummary(bytes) });
+    const list = (await cardDb.all()).filter((x) => x.key.startsWith("bk-")).sort((a, b) => b.key.localeCompare(a.key));
+    for (const old of list.slice(CARD_BACKUP_MAX)) await cardDb.del(old.key);
+    await renderCardBackups();
+    return true;
+  } catch (e) { return false; }
+}
+async function cardKeep() {   // 開いているカードの今の内容を残す (次に開いたとき続きから)
+  try { if (cardState.bytes) await cardDb.put({ key: "current", name: cardState.name, bytes: cardState.bytes, at: new Date().toISOString() }); }
+  catch (e) { /* 保存できない環境 */ }
+}
+
+const stamp = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+const baseName = (n) => (n || "card").replace(/\.(mcr|mcd|mc|bin)$/i, "").replace(/[^\w\-一-龠ぁ-んァ-ヶー]/g, "_").slice(0, 40) || "card";
+
+function cardSet(bytes, name, opts = {}) {
+  if (opts.undo && cardState.bytes) { cardState.undo.push(cardState.bytes); if (cardState.undo.length > 20) cardState.undo.shift(); }
+  cardState.bytes = bytes;
+  if (name !== undefined) cardState.name = name;
+  renderCard();
+  cardKeep();
+}
+
+/* 消すボタンは2回押し (1回目で「本当に消す」に変わり、3秒で戻る) */
+function twoTap(btn, label, fn) {
+  const orig = btn.textContent;
+  let armed = 0;
+  btn.onclick = () => {
+    if (armed) { clearTimeout(armed); armed = 0; btn.textContent = orig; fn(); return; }
+    btn.textContent = label;
+    armed = setTimeout(() => { armed = 0; btn.textContent = orig; }, 3000);
+  };
+}
+const SAVE_COLORS = ["#2f6fb3", "#a86d12", "#6a4fb0", "#2d8a57", "#b0406a", "#3a8f9a", "#7a7f2a"];
+function renderCard() {
+  const has = !!cardState.bytes;
+  $("cardBody").hidden = !has;
+  $("cardBackupNow").disabled = !has;
+  $("cardUndo").disabled = !cardState.undo.length;
+  if (!has) return;
+  let p;
+  try { p = cardParse(cardState.bytes); }
+  catch (e) { $("cardInfo").textContent = e.message; return; }
+  const myName = saveName($("saveid").value);
+  $("cardInfo").textContent = `${cardState.name || "カード"}: セーブ ${p.saves.length}件 ・ 空き ${p.free.length}ブロック (${p.free.length * 8}KB)`;
+  const owner = {};
+  p.saves.forEach((sv, k) => sv.blocks.forEach((b) => { owner[b] = { k, sv }; }));
+  $("cardBlocks").replaceChildren(...Array.from({ length: 15 }, (_, i) => {
+    const d = document.createElement("div"), o = owner[i + 1];
+    d.textContent = i + 1;
+    if (o) {
+      if (o.sv.name === myName) d.className = "mine";
+      else { d.style.background = SAVE_COLORS[o.k % SAVE_COLORS.length]; d.style.borderColor = "transparent"; d.style.color = "#fff"; }
+      d.title = o.sv.title || o.sv.name;
+    }
+    return d;
+  }));
+  $("cardSaves").replaceChildren(...p.saves.map((sv, k) => {
+    const li = document.createElement("li");
+    const cv = document.createElement("canvas"); cv.width = 16; cv.height = 16;
+    const px = cardIconRgba(cardState.bytes, sv);
+    if (px) cv.getContext("2d").putImageData(new ImageData(px, 16, 16), 0, 0);
+    const b = document.createElement("b");
+    const dot = document.createElement("i"); dot.style.background = sv.name === myName ? "var(--accent)" : SAVE_COLORS[k % SAVE_COLORS.length];
+    b.append(dot, sv.title || "(タイトルなし)");
+    const sm = document.createElement("small");
+    sm.textContent = `${sv.name} ・ ${sv.blocks.length}ブロック (${sv.blocks.join(", ")})` + (sv.pocket ? " ・ ポケステ用" : "") + (sv.name === myName ? " ・ 今の作品と同じ名前" : "") + (sv.ok ? "" : " ・ 壊れているかもしれません");
+    const row = document.createElement("div"); row.className = "row";
+    const bm = document.createElement("button"); bm.type = "button"; bm.textContent = "このセーブを書き出す (.mcs)";
+    bm.onclick = () => offerFile(`${baseName(sv.name)}.mcs`, new Blob([cardSaveMcs(cardState.bytes, sv)], { type: "application/octet-stream" }));
+    const bd = document.createElement("button"); bd.type = "button"; bd.textContent = "消す";
+    twoTap(bd, "本当に消す", () => {
+      cardSet(cardDelete(cardState.bytes, sv.first), undefined, { undo: true });
+      $("cardMsg").textContent = `${sv.name} を消しました (「元に戻す」で戻せます)`;
+    });
+    row.append(bm, bd);
+    li.append(cv, b, sm, row);
+    return li;
+  }));
+  if (!p.saves.length) { const li = document.createElement("li"); li.innerHTML = "<small>セーブはありません</small>"; li.style.gridTemplateColumns = "1fr"; $("cardSaves").append(li); }
+  $("cardWarn").replaceChildren(...p.warnings.map((w) => { const li = document.createElement("li"); li.textContent = w; return li; }));
+}
+
+async function renderCardBackups() {
+  let list = [];
+  try { list = (await cardDb.all()).filter((x) => x.key.startsWith("bk-")).sort((a, b) => b.key.localeCompare(a.key)); }
+  catch (e) { $("cardBackups").replaceChildren(Object.assign(document.createElement("li"), { textContent: "この画面ではバックアップを保存できません。「カードを書き出す」でファイルにしてください" })); return; }
+  $("cardBackups").replaceChildren(...list.map((bk) => {
+    const li = document.createElement("li"), d = new Date(bk.at);
+    const b = document.createElement("b");
+    b.textContent = `${d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ ${bk.name || "カード"}`;
+    const sm = document.createElement("small"); sm.textContent = `${bk.why || ""}${bk.summary ? " ・ " + bk.summary : ""}`;
+    const row = document.createElement("div"); row.className = "row";
+    const bo = document.createElement("button"); bo.type = "button"; bo.textContent = "開く";
+    bo.onclick = () => { cardSet(new Uint8Array(bk.bytes), bk.name, { undo: true }); $("cardMsg").textContent = "バックアップを開きました"; $("cardPanel").scrollIntoView({ behavior: "smooth", block: "start" }); };
+    const bdl = document.createElement("button"); bdl.type = "button"; bdl.textContent = "ダウンロード";
+    bdl.onclick = () => offerFile(`${baseName(bk.name)}-backup-${stamp(d)}.mcr`, new Blob([bk.bytes], { type: "application/octet-stream" }));
+    const bx = document.createElement("button"); bx.type = "button"; bx.textContent = "消す";
+    twoTap(bx, "本当に消す", async () => { try { await cardDb.del(bk.key); } catch (e) { /* 消せない */ } renderCardBackups(); });
+    row.append(bo, bdl, bx);
+    li.append(b, sm, row);
+    return li;
+  }));
+  if (!list.length) { const li = document.createElement("li"); li.innerHTML = "<small>まだありません</small>"; $("cardBackups").append(li); }
+}
+
+/* 今の作品 (アニメかキャラクターモード) のファイル */
+function buildCurrentFile() {
+  const pmu = songHasNotes() ? compileSong() : null;
+  const r = buildPocFile(state.frames, state.delay, $("title").value || "ドット絵アニメ", pmu, chara.enabled ? pcharWords(chara) : null);
+  return { ...r, pmu, name: saveName($("saveid").value) };
+}
+
+function buildCardUi() {
+  $("cardFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      cardParse(bytes);
+      cardState.undo = [];
+      cardSet(bytes, f.name);
+      const ok = await cardBackup(bytes, f.name, "開いたときの元のカード");
+      $("cardMsg").textContent = ok ? "カードを開きました。元のカードをこの端末にバックアップしました" : "カードを開きました (この画面ではバックアップを保存できません)";
+    } catch (err) { toast(err.message || "カードを読めませんでした"); }
+  });
+  $("cardNew").onclick = () => { cardState.undo = []; cardSet(cardBlank(), "新しいカード.mcr"); $("cardMsg").textContent = "空のカードを用意しました"; };
+  $("cardAddWork").onclick = () => {
+    try {
+      const f = buildCurrentFile();
+      const r = cardAdd(cardState.bytes, f.name, f.data);
+      cardSet(r.card, undefined, { undo: true });
+      $("cardMsg").textContent = `${f.name} を${r.replaced ? "置き換えました" : "追加しました"} (ブロック ${r.blocks.join(", ")})`;
+    } catch (err) { $("cardMsg").textContent = err.message; }
+  };
+  $("cardAddMcs").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    try {
+      const m = cardParseMcs(new Uint8Array(await f.arrayBuffer()));
+      const r = cardAdd(cardState.bytes, m.name, m.data);
+      cardSet(r.card, undefined, { undo: true });
+      $("cardMsg").textContent = `${m.name} を${r.replaced ? "置き換えました" : "追加しました"}`;
+    } catch (err) { $("cardMsg").textContent = err.message; }
+  });
+  $("cardUndo").onclick = () => { const b = cardState.undo.pop(); if (b) { cardSet(b); $("cardMsg").textContent = "元に戻しました"; } };
+  $("cardExport").onclick = async () => {
+    const name = `${baseName(cardState.name)}-${stamp()}.mcr`;
+    await cardBackup(cardState.bytes, cardState.name, "書き出したカード");
+    await offerFile(name, new Blob([cardState.bytes], { type: "application/octet-stream" }));
+  };
+  $("cardBackupNow").onclick = async () => { const ok = await cardBackup(cardState.bytes, cardState.name, "手動でバックアップ"); toast(ok ? "バックアップしました" : "この画面ではバックアップを保存できません"); };
+  $("saveid").addEventListener("input", () => { if (cardState.bytes) renderCard(); });
+  // 前に開いていたカードを続きから
+  cardDb.get("current").then((cur) => { if (cur && cur.bytes) { try { cardParse(new Uint8Array(cur.bytes)); cardState.bytes = new Uint8Array(cur.bytes); cardState.name = cur.name; renderCard(); } catch (e) { /* 壊れていたら無視 */ } } }).catch(() => {});
+  renderCardBackups();
+}
+
+/* ============================================================
  * 保存・書き出し
  * ============================================================ */
 let downloads = null;
@@ -4135,9 +4529,7 @@ function readmeText(name, blocks, hasMusic) {
 
 $("saveZip").onclick = async () => {
   try {
-    const name = saveName($("saveid").value);
-    const pmu = songHasNotes() ? compileSong() : null;
-    const { data, blocks } = buildPocFile(state.frames, state.delay, $("title").value || "ドット絵アニメ", pmu, chara.enabled ? pcharWords(chara) : null);
+    const { data, blocks, pmu, name } = buildCurrentFile();
     const png = await spritePng(1);
     const extra = pmu ? [{ name: "song.pmu", data: pmu }] : [];
     const zip = makeZip([
@@ -4243,6 +4635,7 @@ buildMusicUi();
 buildScoreUi();
 buildMidiUi();
 buildCharaUi();
+buildCardUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
 renderAll();
 renderMusic();
