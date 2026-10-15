@@ -52,7 +52,10 @@ body {
 @media (min-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "stage import" "edit import" "music music" "score score" "export help"; align-items: start; }
 }
-.music { grid-area: music; } .score { grid-area: score; }
+.music { grid-area: music; }
+.bpm-row { display: flex; gap: 10px; align-items: center; }
+.bpm-row input[type=number] { width: 5.5em; flex: none; font-variant-numeric: tabular-nums; font-size: 16px; }
+.bpm-row input[type=range] { flex: 1 1 auto; min-width: 0; } .score { grid-area: score; }
 .pages { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
 .pages figure { margin: 0; flex: 0 0 auto; display: grid; gap: 4px; justify-items: start; }
 .pages figure img { height: 88px; width: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
@@ -298,7 +301,8 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         <button id="mNew" type="button">まっさらにする</button>
       </div>
       <div class="fields">
-        <div class="field"><label for="bpm">テンポ (BPM) <output id="bpmOut">120</output></label><input id="bpm" type="range" min="40" max="240" value="120"></div>
+        <div class="field"><label for="bpmNum">テンポ (BPM・40〜240)</label>
+          <div class="bpm-row"><input id="bpmNum" type="number" min="40" max="240" step="1" value="120" inputmode="numeric" enterkeyhint="done"><input id="bpm" type="range" min="40" max="240" value="120" aria-label="テンポ (スライダー)"></div></div>
         <div class="field"><label for="bars">長さ (4分の4拍子)</label><select id="bars"></select></div>
         <div class="field"><label for="key">調 (ハモリの音階)</label><select id="key"></select></div>
       </div>
@@ -1457,7 +1461,7 @@ const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyV
 const trackColor = (t) => cssVar(`--t${t + 1}`);
 
 function renderMusic() {
-  $("bpm").value = song.bpm; $("bpmOut").textContent = song.bpm;
+  $("bpm").value = song.bpm; if (document.activeElement !== $("bpmNum")) $("bpmNum").value = song.bpm;
   $("bars").value = song.bars; $("key").value = (song.minor ? "m" : "") + song.key;
   $("chords").value = song.chords;
   const tabs = $("tabs").children;
@@ -1608,7 +1612,18 @@ function buildMusicUi() {
   $("roll").addEventListener("click", rollClick);
   $("octUp").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.min(96 - ROWS + 1, tr.low + 12); drawRoll(); saveDraft(); };
   $("octDown").onclick = () => { const tr = song.tracks[curTrack]; tr.low = Math.max(24, tr.low - 12); drawRoll(); saveDraft(); };
-  $("bpm").addEventListener("input", () => { song.bpm = +$("bpm").value; $("bpmOut").textContent = song.bpm; songChanged({ keepSample: true }); });
+  $("bpm").addEventListener("input", () => { song.bpm = +$("bpm").value; $("bpmNum").value = song.bpm; songChanged({ keepSample: true }); });
+  // 数字で入れる: 入力中は範囲内なら反映、確定 (Enter・フォーカスを外す) で 40〜240 に収める
+  $("bpmNum").addEventListener("input", () => {
+    const v = Math.round(+$("bpmNum").value);
+    if (v >= 40 && v <= 240 && v !== song.bpm) { song.bpm = v; $("bpm").value = v; songChanged({ keepSample: true }); }
+  });
+  $("bpmNum").addEventListener("change", () => {
+    const v = Math.max(40, Math.min(240, Math.round(+$("bpmNum").value) || song.bpm));
+    $("bpmNum").value = v;
+    if (v !== song.bpm) { song.bpm = v; $("bpm").value = v; songChanged({ keepSample: true }); }
+  });
+  $("bpmNum").addEventListener("keydown", (e) => { if (e.key === "Enter") $("bpmNum").blur(); });
   $("bars").addEventListener("change", () => { pushSongUndo(); song.bars = +$("bars").value; songChanged(); });
   $("key").addEventListener("change", () => { const v = $("key").value; song.minor = v[0] === "m"; song.key = +v.replace("m", ""); saveDraft(); });
   $("duty").addEventListener("change", () => { pushSongUndo(); song.tracks[curTrack].duty = +$("duty").value; songChanged({ keepSample: true }); });
