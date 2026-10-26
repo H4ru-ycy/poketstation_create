@@ -213,7 +213,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .roll-inner { display: flex; width: max-content; }
 #rollKeys { position: sticky; left: 0; z-index: 2; display: block; border-right: 1px solid var(--line); }
 .roll-area { position: relative; }
-#roll { display: block; cursor: pointer; position: absolute; top: 0; left: 0; }
+#roll { display: block; cursor: pointer; position: absolute; top: 0; left: 0; touch-action: pan-x pan-y; }
+#roll.editing { touch-action: none; }
 .playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); pointer-events: none; will-change: transform; }
 textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; resize: vertical; }
 .subpanel { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; min-width: 0; }
@@ -425,7 +426,9 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       <h2>作曲 <small>矩形波4音・16分音符単位・ポケステと同じ音で試聴</small> <span class="sample-tag" id="songTag">サンプル: きらきら星</span></h2>
       <div class="controls">
         <button id="mPlay" class="primary" type="button">曲を再生</button>
+        <button id="mFromHere" type="button">表示している所から再生</button>
         <button id="mUndo" type="button" disabled>元に戻す</button>
+        <button id="mRedo" type="button" disabled>やり直す</button>
         <button id="mNew" type="button">まっさらにする</button>
       </div>
       <div class="fields">
@@ -444,6 +447,17 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       </div>
 
       <div class="roll-tools">
+        <span class="lbl">ピアノロールの操作</span>
+        <div class="seg" id="editModes" role="group" aria-label="ピアノロールの操作">
+          <button type="button" data-mode="tap" aria-pressed="true">置く・消す</button>
+          <button type="button" data-mode="draw" aria-pressed="false">なぞって置く</button>
+          <button type="button" data-mode="stretch" aria-pressed="false">のばす・縮める</button>
+          <button type="button" data-mode="move" aria-pressed="false">動かす</button>
+          <button type="button" data-mode="erase" aria-pressed="false">消しゴム</button>
+        </div>
+      </div>
+      <p class="note" id="editHint"></p>
+      <div class="roll-tools">
         <span class="lbl">置く音の長さ</span>
         <div class="seg" id="lens" role="group" aria-label="置く音の長さ">
           <button type="button" data-len="1" aria-pressed="false">16分</button>
@@ -455,12 +469,29 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         </div>
         <div class="row"><button id="octDown" class="icon" type="button" aria-label="低い音を表示">▼</button><button id="octUp" class="icon" type="button" aria-label="高い音を表示">▲</button></div>
       </div>
-      <p class="note">マスをタップすると音符を置き、もう一度タップすると消えます。1つのトラックで同時に鳴る音は1つです。<span id="rangeNote"></span></p>
+      <p class="note">1つのトラックで同時に鳴る音は1つです。パソコンでは、音符の右はしをドラッグしても長さを変えられます。<span id="rangeNote"></span></p>
       <div class="roll-scroll" id="rollScroll">
         <div class="roll-inner">
           <canvas id="rollKeys" aria-hidden="true"></canvas>
           <div class="roll-area"><canvas id="roll" aria-label="ピアノロール"></canvas><div class="playhead" id="playhead" hidden></div></div>
         </div>
+      </div>
+
+      <div class="subpanel" id="songSavePanel">
+        <h3>曲を保存 <small>編集したピアノロール (4トラックすべて)</small></h3>
+        <p class="note">編集した曲は、この端末のブラウザに自動で残ります (下書き)。名前をつけて保存しておくと、あとで呼び出したり、別の曲と行き来したりできます。</p>
+        <div class="field"><label for="svName">名前</label><input id="svName" type="text" maxlength="40" placeholder="例: テーマ曲 (編集中)"></div>
+        <div class="row">
+          <button type="button" id="svSave" class="primary">この端末に保存</button>
+          <button type="button" id="svOver" disabled>上書き保存</button>
+          <button type="button" id="svMidi">MIDI (.mid)</button>
+          <button type="button" id="svPmu">曲データ (.pmu)</button>
+        </div>
+        <p class="msg" id="svMsg" role="status"></p>
+        <details open>
+          <summary class="note">保存した曲 <span id="rgCount"></span></summary>
+          <ul class="backups" id="rgList"></ul>
+        </details>
       </div>
 
       <div class="subpanel" id="rangePanel">
@@ -485,10 +516,6 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           <button type="button" id="rgPmu">曲データ (.pmu) で書き出す</button>
         </div>
         <p class="msg" id="rgMsg" role="status"></p>
-        <details>
-          <summary class="note">保存した曲 <span id="rgCount"></span></summary>
-          <ul class="backups" id="rgList"></ul>
-        </details>
       </div>
 
       <div class="subpanel">
@@ -1732,11 +1759,12 @@ function makeBass(style, list) {
 }
 
 /* ---- 作曲パネル ---- */
-const songUndo = [];
+const songUndo = [], songRedo = [];
 function pushSongUndo() {
   songUndo.push(JSON.stringify(song));
-  if (songUndo.length > 40) songUndo.shift();
-  $("mUndo").disabled = false;
+  if (songUndo.length > 60) songUndo.shift();
+  songRedo.length = 0;
+  updateUndoButtons();
 }
 function songChanged(opts = {}) {
   if (!opts.keepSample) { song.isSample = false; }
@@ -1847,10 +1875,167 @@ function rollScrolled() {
   });
 }
 
+/* ---- ピアノロールの編集 (置く・なぞって置く・のばす・動かす・消しゴム) ---- */
+let editMode = "tap", drag = null, dragMoved = false;
+const EDIT_HINTS = {
+  tap: "マスをタップすると「置く音の長さ」の音符を置き、同じ音符をもう一度タップすると消えます。",
+  draw: "マスを押したまま右へなぞると、その長さの音符を置けます。音符の上から押すと、その音符をのばせます。",
+  stretch: "音符を押したまま左右に動かすと、長さが変わります (16分音符単位)。後ろの音符に重なったら、重なった所だけ上書きします。",
+  move: "音符を押したまま動かすと、高さとタイミングを変えられます。",
+  erase: "音符をタップ、またはなぞると消えます。",
+};
+function setEditMode(m) {
+  editMode = m;
+  for (const b of $("editModes").children) b.setAttribute("aria-pressed", b.dataset.mode === m);
+  $("roll").classList.toggle("editing", m !== "tap");
+  $("editHint").textContent = EDIT_HINTS[m];
+  try { localStorage.setItem("poc-roll-mode", m); } catch (e) { /* 保存できない */ }
+}
+function rollCell(e) {
+  const r = $("roll").getBoundingClientRect();
+  return { s: Math.floor((e.clientX - r.left + rollX0) / CELL_W), row: Math.floor((e.clientY - r.top) / CELL_H) };
+}
+const pitchOfRow = (row) => song.tracks[curTrack].low + ROWS - 1 - row;
+/* 1トラック1音: nt と重なる音符を消す・短くする */
+function fitNote(tr, nt) {
+  const e = nt.s + nt.l;
+  for (const n of tr.notes) if (n !== nt && n.s >= nt.s && n.s < e && n.s + n.l > e) { n.l = n.s + n.l - e; n.s = e; }   // 後ろが残る音符は頭を削る
+  tr.notes = tr.notes.filter((n) => n === nt || !(n.s >= nt.s && n.s < e));
+  for (const n of tr.notes) if (n !== nt && n.s < nt.s && n.s + n.l > nt.s) n.l = nt.s - n.s;
+  tr.notes = tr.notes.filter((n) => n.l > 0);
+  if (!tr.notes.includes(nt)) tr.notes.push(nt);
+  tr.notes.sort((a, b) => a.s - b.s);
+}
+function noteAtCell(c, anyPitch) {
+  const tr = song.tracks[curTrack], m = pitchOfRow(c.row);
+  return tr.notes.find((n) => c.s >= n.s && c.s < n.s + n.l && n.n === m) || (anyPitch ? tr.notes.find((n) => c.s >= n.s && c.s < n.s + n.l) : null);
+}
+function edgeHit(e) {   // マウスで音符の右はしをつかんだか
+  const c = rollCell(e), n = noteAtCell(c, false);
+  if (!n) return null;
+  const r = $("roll").getBoundingClientRect(), x = e.clientX - r.left + rollX0;
+  return (n.s + n.l) * CELL_W - x <= 7 ? n : null;
+}
+function rollAutoScroll(e) {
+  const sc = $("rollScroll"), r = sc.getBoundingClientRect();
+  if (e.clientX > r.right - 28) sc.scrollLeft += 10;
+  else if (e.clientX < r.left + KEYS_W + 20) sc.scrollLeft -= 10;
+}
+function startEdit() { if (!drag.undone) { pushSongUndo(); drag.undone = true; } }
+
+function rollDown(e) {
+  if (range.pick) return;                 // 範囲を選ぶ (click で処理)
+  const c = rollCell(e), total = totalSteps();
+  if (c.s < 0 || c.s >= total || c.row < 0 || c.row >= ROWS) return;
+  const tr = song.tracks[curTrack];
+  let mode = editMode;
+  const edge = e.pointerType === "mouse" ? edgeHit(e) : null;
+  if (mode === "tap" && !edge) return;
+  if (edge) mode = "stretch";
+  e.preventDefault();
+  try { $("roll").setPointerCapture(e.pointerId); } catch (er) { /* 古いブラウザ */ }
+  dragMoved = false;
+  drag = { mode, start: c, undone: false };
+  if (mode === "draw") {
+    const hit = noteAtCell(c, false);
+    if (hit) { drag.mode = "stretch"; drag.note = hit; }
+    else { startEdit(); drag.note = { s: c.s, l: 1, n: pitchOfRow(c.row) }; tr.notes.push(drag.note); if (!musicSrc) blip(drag.note.n, tr.duty); }
+  } else if (mode === "stretch") {
+    drag.note = edge || noteAtCell(c, true);
+    if (!drag.note) { drag = null; return; }
+  } else if (mode === "move") {
+    drag.note = noteAtCell(c, false);
+    if (!drag.note) { drag = null; return; }
+    drag.orig = { s: drag.note.s, n: drag.note.n };
+  } else if (mode === "erase") {
+    eraseAt(c);
+  }
+  drawRoll();
+}
+function eraseAt(c) {
+  const n = noteAtCell(c, false);
+  if (!n) return;
+  startEdit();
+  const tr = song.tracks[curTrack];
+  tr.notes.splice(tr.notes.indexOf(n), 1);
+}
+function rollMove(e) {
+  if (!drag) return;
+  rollAutoScroll(e);
+  const c = rollCell(e), total = totalSteps(), tr = song.tracks[curTrack], n = drag.note;
+  if (drag.mode === "stretch" || drag.mode === "draw") {
+    const l = Math.max(1, Math.min(total, c.s + 1) - n.s);
+    if (l !== n.l) { startEdit(); n.l = l; dragMoved = true; drawRoll(); }
+  } else if (drag.mode === "move") {
+    const ds = c.s - drag.start.s, dr = c.row - drag.start.row;
+    const s = Math.max(0, Math.min(total - n.l, drag.orig.s + ds));
+    const m = Math.max(24, Math.min(96, drag.orig.n - dr));
+    if (s !== n.s || m !== n.n) {
+      startEdit();
+      if (m !== n.n && !musicSrc) blip(m, tr.duty);
+      n.s = s; n.n = m; dragMoved = true; drawRoll();
+    }
+  } else if (drag.mode === "erase") {
+    if (c.s >= 0 && c.row >= 0 && c.row < ROWS) { const before = tr.notes.length; eraseAt(c); if (tr.notes.length !== before) { dragMoved = true; drawRoll(); } }
+  }
+}
+function rollUp() {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.note && (d.mode === "stretch" || d.mode === "draw" || d.mode === "move") && d.undone) fitNote(song.tracks[curTrack], d.note);
+  if (d.undone) songChanged();
+  else drawRoll();
+  if (dragMoved || d.mode !== "tap") setTimeout(() => { dragMoved = false; }, 0);
+}
+
+/* やり直す */
+function updateUndoButtons() { $("mUndo").disabled = !songUndo.length; $("mRedo").disabled = !songRedo.length; }
+
+/* 名前をつけて保存した曲 (上書き用に、開いている曲の保存先を覚える) */
+let savedKey = null;
+async function saveWholeSong(overwrite) {
+  const name = $("svName").value.trim() || "名前のない曲";
+  const key = overwrite && savedKey ? savedKey : "song-" + Date.now();
+  try {
+    await cardDb.put({ key, name, at: new Date().toISOString(), song: JSON.parse(JSON.stringify(song)), from: "曲全体" });
+    savedKey = key; $("svOver").disabled = false;
+    $("svMsg").textContent = `「${name}」を${overwrite ? "上書き保存" : "この端末に保存"}しました`;
+    renderSavedSongs();
+  } catch (e) { $("svMsg").textContent = "この画面では端末に保存できません。MIDI か曲データで書き出してください"; }
+}
+
+function buildEditUi() {
+  for (const b of $("editModes").children) b.onclick = () => setEditMode(b.dataset.mode);
+  let m = "tap"; try { m = localStorage.getItem("poc-roll-mode") || "tap"; } catch (e) { /* なし */ }
+  setEditMode(EDIT_HINTS[m] ? m : "tap");
+  const roll = $("roll");
+  roll.addEventListener("pointerdown", rollDown);
+  roll.addEventListener("pointermove", (e) => {
+    if (drag) { rollMove(e); return; }
+    if (e.pointerType === "mouse") roll.style.cursor = edgeHit(e) ? "ew-resize" : editMode === "move" && noteAtCell(rollCell(e), false) ? "grab" : "pointer";
+  });
+  roll.addEventListener("pointerup", rollUp);
+  roll.addEventListener("pointercancel", rollUp);
+  $("mRedo").onclick = () => {
+    const s = songRedo.pop(); if (!s) return;
+    songUndo.push(JSON.stringify(song)); song = JSON.parse(s); songChanged({ keepSample: true }); updateUndoButtons();
+  };
+  $("mFromHere").onclick = () => {
+    const sc = $("rollScroll"), st = Math.floor(sc.scrollLeft / CELL_W / 16) * 16;
+    if (musicSrc) stopMusic();
+    startMusic(st * stepLen(song.bpm) / SND_RATE, "music");
+  };
+  $("svSave").onclick = () => saveWholeSong(false);
+  $("svOver").onclick = () => saveWholeSong(true);
+  $("svMidi").onclick = () => offerFile(`${fileBase($("svName").value || $("title").value)}.mid`, new Blob([songToMidi(song)], { type: "audio/midi" }));
+  $("svPmu").onclick = () => { if (!songHasNotes()) { toast("曲に音符がありません"); return; } offerFile(`${fileBase($("svName").value || $("title").value)}.pmu`, new Blob([compileSong()], { type: "application/octet-stream" })); };
+}
+
 function rollClick(e) {
   const r = $("roll").getBoundingClientRect();
   const s = Math.floor((e.clientX - r.left + rollX0) / CELL_W), row = Math.floor((e.clientY - r.top) / CELL_H);
   if (s < 0 || s >= totalSteps() || row < 0 || row >= ROWS) return;
+  if (!range.pick && (editMode !== "tap" || dragMoved)) return;
   if (range.pick) {                    // 範囲を選ぶ: 1回目=始まりの拍, 2回目=終わりの拍
     const b = s - (s % 4);
     if (range.pick === 1) { range.s0 = b; range.s1 = b + 4; range.pick = 2; $("rgPickNote").textContent = "終わりの拍をタップしてください"; }
@@ -1968,7 +2153,8 @@ function buildMusicUi() {
   $("tClear").onclick = () => { pushSongUndo(); song.tracks[curTrack].notes = []; songChanged(); };
   $("mUndo").onclick = () => {
     const s = songUndo.pop(); if (!s) return;
-    song = JSON.parse(s); $("mUndo").disabled = !songUndo.length; songChanged({ keepSample: true });
+    songRedo.push(JSON.stringify(song));
+    song = JSON.parse(s); updateUndoButtons(); songChanged({ keepSample: true });
   };
   $("mmlApply").onclick = () => {
     const r = parseDoremi($("mml").value, TRACK_DEF[curTrack].oct);
@@ -2130,7 +2316,8 @@ async function renderSavedSongs() {
     mk("作曲パネルで開く", () => {
       const sg = validSong(rec.song); if (!sg) { toast("読めませんでした"); return; }
       stopMusic(); pushSongUndo(); song = sg; range.s0 = 0; range.s1 = totalSteps(); songChanged();
-      $("rgMsg").textContent = `「${rec.name}」を開きました (「元に戻す」で前の曲に戻せます)`;
+      savedKey = rec.key; $("svName").value = rec.name; $("svOver").disabled = false;
+      $("svMsg").textContent = `「${rec.name}」を開きました (「元に戻す」で前の曲に戻せます)`;
     });
     mk("MIDI", () => offerFile(`${fileBase(rec.name)}.mid`, new Blob([songToMidi(validSong(rec.song))], { type: "audio/midi" })));
     twoTap(mk("消す", null), "本当に消す", async () => { try { await cardDb.del(rec.key); } catch (e) { /* 消せない */ } renderSavedSongs(); });
@@ -3440,7 +3627,7 @@ async function openProject(file) {
     localStorage.setItem(STORE_KEY, JSON.stringify({ pda: j.pda, title: j.title, id: j.id, sample: false, song: j.song, chara: j.chara }));
   } catch (e) { toast("作品ファイルとして読めませんでした"); return; }
   if (!loadDraft()) { toast("作品ファイルとして読めませんでした"); return; }
-  stopMusic(); undoStack.length = 0; songUndo.length = 0;
+  stopMusic(); undoStack.length = 0; songUndo.length = 0; songRedo.length = 0; updateUndoButtons();
   state.cur = 0; state.isSample = false; song.isSample = false;
   charaEngine = null;
   renderAll(); renderMusic(); toast("作品を開きました");
@@ -3490,6 +3677,7 @@ buildMusicUi();
 buildScoreUi();
 buildMidiUi();
 buildRangeUi();
+buildEditUi();
 buildCharaUi();
 buildCardUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
