@@ -463,6 +463,34 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
         </div>
       </div>
 
+      <div class="subpanel" id="rangePanel">
+        <h3>範囲を切り出す <small>好きな範囲を試聴して、切り出し・保存</small></h3>
+        <div class="row"><button type="button" id="rgPick" aria-pressed="false">ピアノロールで範囲を選ぶ</button><span class="note" id="rgPickNote">押してから、始まりと終わりの拍をタップします</span></div>
+        <div class="chara-grid">
+          <div class="field"><label for="rgStartBar">はじめ (小節)</label><input id="rgStartBar" type="number" min="1" value="1" inputmode="numeric" enterkeyhint="done"></div>
+          <div class="field"><label for="rgStartBeat">はじめ (拍)</label><select id="rgStartBeat"><option value="1">1拍目から</option><option value="2">2拍目から</option><option value="3">3拍目から</option><option value="4">4拍目から</option></select></div>
+          <div class="field"><label for="rgEndBar">おわり (小節)</label><input id="rgEndBar" type="number" min="1" value="1" inputmode="numeric" enterkeyhint="done"></div>
+          <div class="field"><label for="rgEndBeat">おわり (拍)</label><select id="rgEndBeat"><option value="1">1拍目まで</option><option value="2">2拍目まで</option><option value="3">3拍目まで</option><option value="4" selected>4拍目まで</option></select></div>
+        </div>
+        <p class="note" id="rgInfo"></p>
+        <div class="row">
+          <button type="button" id="rgPlay" class="primary">範囲を試聴 (くり返し)</button>
+          <button type="button" id="rgShow">範囲を表示</button>
+          <button type="button" id="rgTrim">この範囲だけ残す</button>
+        </div>
+        <div class="field"><label for="rgName">保存する名前</label><input id="rgName" type="text" maxlength="40" placeholder="例: サビ"></div>
+        <div class="row">
+          <button type="button" id="rgSave" class="primary">この端末に保存</button>
+          <button type="button" id="rgMidi">MIDI (.mid) で書き出す</button>
+          <button type="button" id="rgPmu">曲データ (.pmu) で書き出す</button>
+        </div>
+        <p class="msg" id="rgMsg" role="status"></p>
+        <details>
+          <summary class="note">保存した曲 <span id="rgCount"></span></summary>
+          <ul class="backups" id="rgList"></ul>
+        </details>
+      </div>
+
       <div class="subpanel">
         <h3>ドレミで入力 <small><span id="mmlTrack">メロディ</span>トラック / <span id="mmlHint">ド = ド5</span></small></h3>
         <textarea id="mml" rows="3" spellcheck="false" autocapitalize="off" aria-label="ドレミで入力"></textarea>
@@ -1509,8 +1537,9 @@ function stopMusic(quiet) {
 const musicPos = () => (actx && musicSrc ? (((actx.currentTime - musicT0) % musicLoop) + musicLoop) % musicLoop : 0);
 let restartTimer = 0;
 function restartIfPlaying() {
-  if (!musicSrc || musicFrom === "midi") return;
+  if (!musicSrc || musicFrom === "midi" || musicFrom === "chara") return;
   clearTimeout(restartTimer);
+  if (musicFrom === "range") { const pos = musicPos(); restartTimer = setTimeout(() => { if (musicSrc) playRange(true, pos); }, 120); return; }
   const pos = musicPos(), from = musicFrom;
   restartTimer = setTimeout(() => { if (musicSrc) startMusic(pos, from); }, 120);
 }
@@ -1735,6 +1764,7 @@ function renderMusic() {
   if (document.activeElement !== $("mml")) $("mml").value = tr.text;
   $("mmlHint").textContent = `ド = ${midiName(12 * (TRACK_DEF[curTrack].oct + 1))}`;
   $("songTag").hidden = !song.isSample;
+  if (typeof renderRange === "function" && $("rgInfo")) renderRange();
   drawRoll();
 }
 
@@ -1798,6 +1828,12 @@ function drawRoll() {
     g.fill();
     if (w > 26) { g.fillStyle = "#fff"; g.fillText(NOTE_JA[n.n % 12], x + 4, y + h / 2 + 0.5); }
   }
+  if (range.shown && range.s1 > s0 && range.s0 < s1) {   // 切り出す範囲
+    g.fillStyle = cssVar("--accent"); g.globalAlpha = 0.13;
+    g.fillRect(range.s0 * CELL_W, 0, (range.s1 - range.s0) * CELL_W, H);
+    g.globalAlpha = 1;
+    g.fillRect(range.s0 * CELL_W, 0, 2, H); g.fillRect(range.s1 * CELL_W - 2, 0, 2, H);
+  }
   $("rangeNote").textContent = above || below
     ? `表示範囲の${above && below ? "上と下" : above ? "上" : "下"}にも音符があります (▲▼で表示を動かせます)` : "";
 }
@@ -1815,6 +1851,16 @@ function rollClick(e) {
   const r = $("roll").getBoundingClientRect();
   const s = Math.floor((e.clientX - r.left + rollX0) / CELL_W), row = Math.floor((e.clientY - r.top) / CELL_H);
   if (s < 0 || s >= totalSteps() || row < 0 || row >= ROWS) return;
+  if (range.pick) {                    // 範囲を選ぶ: 1回目=始まりの拍, 2回目=終わりの拍
+    const b = s - (s % 4);
+    if (range.pick === 1) { range.s0 = b; range.s1 = b + 4; range.pick = 2; $("rgPickNote").textContent = "終わりの拍をタップしてください"; }
+    else {
+      if (b < range.s0) { range.s1 = range.s0 + 4; range.s0 = b; } else range.s1 = b + 4;
+      range.pick = 0; $("rgPick").setAttribute("aria-pressed", false); $("rgPickNote").textContent = "押してから、始まりと終わりの拍をタップします";
+    }
+    range.shown = true; renderRange(); drawRoll();
+    return;
+  }
   const tr = song.tracks[curTrack], m = tr.low + ROWS - 1 - row;
   pushSongUndo();
   const hit = tr.notes.find((n) => s >= n.s && s < n.s + n.l);
@@ -1967,10 +2013,179 @@ function buildMusicUi() {
   };
 }
 
+/* ---- 範囲を切り出す (作曲パネル) ---- */
+const range = { s0: 0, s1: 64, pick: 0, shown: false };
+
+/* src の s0〜s1 (ステップ) を取り出した新しい曲。exact=false なら小節単位に切り上げる */
+function sliceSong(src, s0, s1, exact) {
+  const sg = JSON.parse(JSON.stringify(src));
+  const len = s1 - s0;
+  sg.bars = exact ? len / 16 : Math.max(1, Math.ceil(len / 16));
+  sg.isSample = false; sg.chords = "";
+  sg.tracks.forEach((tr) => {
+    tr.notes = tr.notes.filter((n) => n.s + n.l > s0 && n.s < s1).map((n) => {
+      const a = Math.max(n.s, s0), b = Math.min(n.s + n.l, s1);
+      return { s: a - s0, l: b - a, n: n.n };
+    }).filter((n) => n.l > 0);
+    tr.text = "";
+  });
+  return sg;
+}
+
+/* 小節の途中で終わる範囲は、曲の長さを小節単位に切り上げる (残りは休み) */
+const padNote = (sg) => { const rest = sg.bars * 16 - (range.s1 - range.s0); return rest ? `。最後の${rest / 4}拍は休みになります` : ""; };
+function rangeFromInputs(changed = "") {
+  const total = totalSteps(), bars = song.bars;
+  const sb = Math.max(1, Math.min(bars, Math.round(+$("rgStartBar").value) || 1));
+  const eb = Math.max(1, Math.min(bars, Math.round(+$("rgEndBar").value) || sb));
+  let s0 = (sb - 1) * 16 + (+$("rgStartBeat").value - 1) * 4;
+  let s1 = (eb - 1) * 16 + (+$("rgEndBeat").value) * 4;
+  if (s1 <= s0) {   // はじめ と おわり が逆になったら、いま変えたほうに合わせる
+    if (changed.startsWith("rgStart")) s1 = Math.min(total, (sb - 1) * 16 + 16 > s0 ? (sb - 1) * 16 + 16 : s0 + 4);
+    else s0 = Math.max(0, s1 - 4 - ((s1 - 4) % 16));
+  }
+  range.s0 = Math.max(0, Math.min(total - 4, s0)); range.s1 = Math.max(range.s0 + 4, Math.min(total, s1));
+  range.shown = true;
+}
+function rangeToInputs() {
+  $("rgStartBar").max = $("rgEndBar").max = song.bars;
+  $("rgStartBar").value = Math.floor(range.s0 / 16) + 1;
+  $("rgStartBeat").value = Math.floor((range.s0 % 16) / 4) + 1;
+  const e = range.s1 - 1;
+  $("rgEndBar").value = Math.floor(e / 16) + 1;
+  $("rgEndBeat").value = Math.floor((e % 16) / 4) + 1;
+}
+const posText = (s) => `${Math.floor(s / 16) + 1}小節目` + (s % 16 ? `${Math.floor((s % 16) / 4) + 1}拍目` : "");
+function renderRange() {
+  if (range.s1 > totalSteps()) { range.s1 = totalSteps(); if (range.s0 >= range.s1) range.s0 = Math.max(0, range.s1 - 16); }
+  rangeToInputs();
+  const len = range.s1 - range.s0, sec = len * stepLen(song.bpm) / SND_RATE;
+  const cnt = song.tracks.reduce((a, tr) => a + tr.notes.filter((n) => n.s + n.l > range.s0 && n.s < range.s1).length, 0);
+  const endBeat = range.s1 - 4;
+  $("rgInfo").textContent = `${posText(range.s0)}から ${Math.floor(endBeat / 16) + 1}小節目${Math.floor((endBeat % 16) / 4) + 1}拍目まで ・ ${len / 4}拍 (${(len / 16).toFixed(len % 16 ? 2 : 0)}小節) ・ 約${sec.toFixed(1)}秒 ・ 音符 ${cnt}個`;
+  if (!$("rgName").value || $("rgName").dataset.auto === "1") {
+    $("rgName").value = `${Math.floor(range.s0 / 16) + 1}-${Math.floor((range.s1 - 1) / 16) + 1}小節`;
+    $("rgName").dataset.auto = "1";
+  }
+  $("rgPlay").textContent = musicSrc && musicFrom === "range" ? "試聴を止める" : "範囲を試聴 (くり返し)";
+}
+
+function playRange(restart, pos = 0) {
+  if (!restart && musicSrc && musicFrom === "range") { stopMusic(); renderRange(); return; }
+  const sg = sliceSong(song, range.s0, range.s1, true);
+  if (!songHasNotes(sg)) { if (!restart) toast("この範囲には音符がありません"); return; }
+  startMusic(pos, "range", sg);
+  renderRange();
+}
+
+/* MIDI (SMF format 1)。トラック0 にテンポ、1-4 にメロディ・ハモリ・和音・ベース */
+function songToMidi(sg) {
+  const PPQ = 96, TPS = PPQ / 4;
+  const vlq = (v) => { const b = [v & 0x7F]; while ((v >>= 7)) b.unshift((v & 0x7F) | 0x80); return b; };
+  const u32 = (v) => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  const text = (type, str) => { const b = [...new TextEncoder().encode(str)]; return [0xFF, type, ...vlq(b.length), ...b]; };
+  const chunk = (events) => {
+    events.sort((a, b) => a.t - b.t || a.o - b.o);
+    const out = []; let t = 0;
+    for (const e of events) { out.push(...vlq(e.t - t), ...e.d); t = e.t; }
+    out.push(0, 0xFF, 0x2F, 0);
+    return [0x4D, 0x54, 0x72, 0x6B, ...u32(out.length), ...out];
+  };
+  const us = Math.round(60e6 / sg.bpm);
+  const tracks = [chunk([
+    { t: 0, o: 0, d: text(0x03, $("title").value || "ドット絵アニメ") },
+    { t: 0, o: 0, d: [0xFF, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] },
+    { t: 0, o: 0, d: [0xFF, 0x58, 4, 4, 2, 24, 8] },
+    { t: sg.bars * 16 * TPS, o: 0, d: [0xFF, 0x01, 0] },   // 曲の長さの目印
+  ])];
+  sg.tracks.forEach((tr, ch) => {
+    if (tr.mute || !tr.notes.length) return;
+    const vel = Math.max(1, Math.min(127, tr.vol * 8 + 7));
+    const ev = [{ t: 0, o: 0, d: text(0x03, TRACK_DEF[ch].name) }, { t: 0, o: 0, d: [0xC0 | ch, 80] }];
+    for (const n of tr.notes) {
+      ev.push({ t: n.s * TPS, o: 2, d: [0x90 | ch, n.n, vel] });
+      ev.push({ t: (n.s + n.l) * TPS, o: 1, d: [0x80 | ch, n.n, 0] });
+    }
+    tracks.push(chunk(ev));
+  });
+  const head = [0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, tracks.length, 0, PPQ];
+  return new Uint8Array([...head, ...tracks.flat()]);
+}
+
+const fileBase = (s) => (s || "song").replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40) || "song";
+
+/* この端末に保存した曲 (IndexedDB。カードのバックアップと同じ場所) */
+async function renderSavedSongs() {
+  let list = [];
+  try { list = (await cardDb.all()).filter((x) => x.key.startsWith("song-")).sort((a, b) => b.key.localeCompare(a.key)); }
+  catch (e) { $("rgList").replaceChildren(Object.assign(document.createElement("li"), { textContent: "この画面では端末に保存できません。MIDI か曲データで書き出してください" })); return; }
+  $("rgCount").textContent = list.length ? `(${list.length})` : "";
+  $("rgList").replaceChildren(...list.map((rec) => {
+    const li = document.createElement("li"), d = new Date(rec.at);
+    const b = document.createElement("b"); b.textContent = rec.name;
+    const sm = document.createElement("small");
+    sm.textContent = `${rec.song.bars}小節 ・ BPM ${rec.song.bpm} ・ ${d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${rec.from ? " ・ " + rec.from : ""}`;
+    const row = document.createElement("div"); row.className = "row";
+    const mk = (label, fn) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; x.onclick = fn; row.append(x); return x; };
+    mk("作曲パネルで開く", () => {
+      const sg = validSong(rec.song); if (!sg) { toast("読めませんでした"); return; }
+      stopMusic(); pushSongUndo(); song = sg; range.s0 = 0; range.s1 = totalSteps(); songChanged();
+      $("rgMsg").textContent = `「${rec.name}」を開きました (「元に戻す」で前の曲に戻せます)`;
+    });
+    mk("MIDI", () => offerFile(`${fileBase(rec.name)}.mid`, new Blob([songToMidi(validSong(rec.song))], { type: "audio/midi" })));
+    twoTap(mk("消す", null), "本当に消す", async () => { try { await cardDb.del(rec.key); } catch (e) { /* 消せない */ } renderSavedSongs(); });
+    li.append(b, sm, row);
+    return li;
+  }));
+  if (!list.length) { const li = document.createElement("li"); li.innerHTML = "<small>まだありません</small>"; $("rgList").append(li); }
+}
+
+function buildRangeUi() {
+  for (const id of ["rgStartBar", "rgStartBeat", "rgEndBar", "rgEndBeat"]) {
+    $(id).addEventListener("change", () => { rangeFromInputs(id); renderRange(); drawRoll(); if (musicSrc && musicFrom === "range") playRange(true); });
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") $(id).blur(); });
+  }
+  $("rgName").addEventListener("input", () => { $("rgName").dataset.auto = "0"; });
+  $("rgPick").onclick = () => {
+    range.pick = range.pick ? 0 : 1;
+    $("rgPick").setAttribute("aria-pressed", !!range.pick);
+    $("rgPickNote").textContent = range.pick ? "ピアノロールで、始まりの拍をタップしてください" : "押してから、始まりと終わりの拍をタップします";
+    if (range.pick) $("rollScroll").scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  $("rgPlay").onclick = () => playRange(false);
+  $("rgShow").onclick = () => { range.shown = true; drawRoll(); $("rollScroll").scrollLeft = Math.max(0, range.s0 * CELL_W - 8); $("rollScroll").scrollIntoView({ behavior: "smooth", block: "center" }); };
+  $("rgTrim").onclick = () => {
+    const sg = sliceSong(song, range.s0, range.s1, false);
+    stopMusic(); pushSongUndo();
+    const from = `${posText(range.s0)}から`, pad = padNote(sg);
+    song = sg; range.s0 = 0; range.s1 = totalSteps();
+    songChanged();
+    $("rgMsg").textContent = `${from}を切り出して、${song.bars}小節の曲にしました${pad} (「元に戻す」で戻せます)`;
+  };
+  $("rgSave").onclick = async () => {
+    const sg = sliceSong(song, range.s0, range.s1, false);
+    const name = $("rgName").value.trim() || "切り出した曲";
+    try {
+      await cardDb.put({ key: "song-" + Date.now(), name, at: new Date().toISOString(), song: sg, from: `${posText(range.s0)}から ${sg.bars}小節` });
+      $("rgMsg").textContent = `「${name}」をこの端末に保存しました${padNote(sg)}`;
+      renderSavedSongs();
+    } catch (e) { $("rgMsg").textContent = "この画面では端末に保存できません。MIDI か曲データで書き出してください"; }
+  };
+  $("rgMidi").onclick = () => offerFile(`${fileBase($("rgName").value)}.mid`, new Blob([songToMidi(sliceSong(song, range.s0, range.s1, false))], { type: "audio/midi" }));
+  $("rgPmu").onclick = () => {
+    const sg = sliceSong(song, range.s0, range.s1, false);
+    if (!songHasNotes(sg)) { toast("この範囲には音符がありません"); return; }
+    offerFile(`${fileBase($("rgName").value)}.pmu`, new Blob([compileSong(sg)], { type: "application/octet-stream" }));
+  };
+  range.s0 = 0; range.s1 = totalSteps();
+  renderSavedSongs();
+}
+
 function updateMusicUi() {
   const midi = musicSrc && musicFrom === "midi";
   $("mPlay").textContent = musicSrc && !midi ? "曲を止める" : "曲を再生";
-  $("playhead").hidden = !musicSrc || midi;
+  $("playhead").hidden = !musicSrc || !["music", "range", "preview"].includes(musicFrom);
+  if ($("rgPlay")) $("rgPlay").textContent = musicSrc && musicFrom === "range" ? "試聴を止める" : "範囲を試聴 (くり返し)";
   if ($("midiPlay")) $("midiPlay").textContent = midi ? "試聴を止める" : "切り取った部分を試聴";
   if (!midi) midiHead = -1;
 }
@@ -1978,7 +2193,7 @@ function updateMusicUi() {
 function tickMusicUi() {
   if (!musicSrc) return;
   if (musicFrom === "midi") { tickMidiHead(); return; }
-  const x = musicPos() * SND_RATE / musicSL * CELL_W;
+  const x = ((musicFrom === "range" ? range.s0 : 0) + musicPos() * SND_RATE / musicSL) * CELL_W;
   $("playhead").style.transform = `translateX(${x}px)`;
   const sc = $("rollScroll");
   if (x < sc.scrollLeft || x > sc.scrollLeft + sc.clientWidth - KEYS_W - 20) sc.scrollLeft = Math.max(0, x - 8);
@@ -3274,6 +3489,7 @@ function toast(msg) {
 buildMusicUi();
 buildScoreUi();
 buildMidiUi();
+buildRangeUi();
 buildCharaUi();
 buildCardUi();
 if (!loadDraft()) { state.frames = sampleFrames(); state.delay = 2; state.isSample = true; song = sampleSong(); }
