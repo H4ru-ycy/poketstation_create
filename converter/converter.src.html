@@ -329,6 +329,15 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       <div id="charaBody" hidden class="midi-body">
         <p class="note">コマ (上のコマ列の絵) を、表情や背景に割り当てます。顔の絵は「画像から変換」や「ドット編集」で作ってください。</p>
         <div class="subpanel">
+          <h3>待機の表示</h3>
+          <div class="chara-grid">
+            <div class="field"><label for="idleShow">待機しているときに出すもの</label>
+              <select id="idleShow"><option value="clock">日付と時計</option><option value="face">キャラクターの顔 (待機の顔)</option></select></div>
+            <div class="field"><label for="idleOff">表示を消すまで (秒・0 で消さない)</label><input id="idleOff" type="number" min="0" max="600" step="5" value="30" inputmode="numeric"></div>
+          </div>
+          <p class="note">決められた時間ボタンを押さないと表示が消えます。消えたあとは決定ボタンを押すと、また表示されます (ほかのボタンでは戻りません)。日付と時計のときも、ボタンを押すと表情のコマを少しのあいだ出せます。</p>
+        </div>
+        <div class="subpanel">
           <h3>表情</h3>
           <div class="row"><button type="button" id="charaSample">見本の顔を入れて試す</button><span class="note">シンプルな顔のコマを7枚足して割り当てます。自分の絵に入れ替えて使ってください。</span></div>
           <div class="faces" id="charaFaces"></div>
@@ -370,7 +379,8 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
             </div>
             <p class="note">8個まで。曲は作曲パネルの曲を使います。曲の途中で決定を押すと止まります。</p>
           </div>
-          <p class="note">どのボタンでも3秒押し続けると、ポケステの時計画面に戻ります。</p>
+          <p class="note">日付と時計を出しているときに決定を長押しすると、日付と時刻を合わせられます (▲▼で数字を変える、◀▶で 年・月・日・時・分 を選ぶ、決定で決める)。</p>
+          <p class="note">どのボタンでも3秒押し続けると、ポケステの時計画面に戻ります (時刻合わせの間は除く)。</p>
           <ul class="warn" id="charaWarn"></ul>
           <p class="note" id="charaInfo"></p>
         </div>
@@ -702,6 +712,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           <dt>2回押し</dt><dd>日付と時計 (どのボタンかは設定で選ぶ)</dd>
           <dt>長押し</dt><dd>基準日からの日数</dd>
           <dt>コマンド</dt><dd>曲を最後まで鳴らして待機に戻る (決定で止める)</dd>
+          <dt>時刻合わせ</dt><dd>日付と時計の表示中に決定を長押し → ▲▼で変える、◀▶で項目、決定で決める</dd>
           <dt>3秒押す</dt><dd>時計画面に戻る</dd>
         </dl>
       </details>
@@ -3006,6 +3017,7 @@ function newChara() {
     baseDate: "2026-01-22", countFrom: 0, daysY: 12,
     show: 5, dblWin: 0.4, longTime: 1, cmdGap: 1, exit: 3,
     singMode: "faces", singFirst: 0, singCount: 4, singSync: 3, singDelay: 4,
+    idleShow: "clock", idleOff: 30,
   };
 }
 let chara = newChara();
@@ -3030,6 +3042,8 @@ function validChara(x) {
   c.singMode = ["faces", "image", "anim"].includes(x.singMode) ? x.singMode : "faces";
   c.singFirst = Math.max(0, fr(x.singFirst)); c.singCount = Math.round(num(x.singCount, 1, 999, 4));
   c.singSync = Math.round(num(x.singSync, 0, 4, 3)); c.singDelay = Math.round(num(x.singDelay, 1, 30, 4));
+  c.idleShow = x.idleShow === "face" ? "face" : "clock";
+  c.idleOff = Math.round(num(x.idleOff, 0, 600, 30));
   return c;
 }
 
@@ -3040,7 +3054,7 @@ function pcharWords(c) {
   const tick = (sec) => Math.max(1, Math.round(sec * 30));
   const btn = (b) => CHARA_BTN[b] || 0;
   const [y, m, d] = c.baseDate.split("-").map(Number);
-  w[0] = 0x52484350; w[1] = 2;
+  w[0] = 0x52484350; w[1] = 3;
   w[2] = c.idle < state.frames.length ? c.idle : 0; w[3] = fr(c.blink);
   for (let i = 0; i < 5; i++) w[4 + i] = fr(c.faces[i]);
   w[9] = tick(c.faceHold);
@@ -3057,6 +3071,9 @@ function pcharWords(c) {
   w[34] = c.singMode === "anim" ? 1 : 0;
   w[35] = c.singFirst; w[36] = c.singMode === "anim" ? c.singCount : 0;
   w[37] = c.singDelay; w[38] = c.singSync;
+  // version 3: 待機の表示
+  w[40] = c.idleShow === "clock" ? 1 : 0;
+  w[41] = c.idleOff > 0 ? tick(c.idleOff) : 0;
   return w;
 }
 
@@ -3065,11 +3082,13 @@ function charaReadme() {
   const nm = (b) => (CHARA_BTNS.find(([k]) => k === b) || [, ""])[1];
   return [
     "キャラクターモードでの操作:",
-    "  ボタンを押す        表情が変わる (しばらくすると待機の顔に戻る)",
+    chara.idleShow === "clock" ? "  待機中は日付と時計を表示" + (chara.idleOff ? ` (${chara.idleOff}秒さわらないと消える。決定で戻る)` : "") : (chara.idleOff ? `  ${chara.idleOff}秒さわらないと表示が消える。決定で戻る` : ""),
+    "  ボタンを押す        表情が変わる (しばらくすると待機の表示に戻る)",
     chara.dbl ? `  ${nm(chara.dbl)}ボタンを2回押す   日付と時計` : "",
     chara.long ? `  ${nm(chara.long)}ボタンを長押し   ${chara.baseDate} からの日数` : "",
     chara.cmd.length ? `  ${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
     chara.cmd.length && chara.singMode === "anim" ? `  (曲の間はコマ ${chara.singFirst + 1} から ${chara.singCount}コマのアニメーション)` : "",
+    chara.dbl ? "  日付と時計の表示中に決定を長押し  日付と時刻を合わせる (上下で変える・左右で項目・決定で決める)" : "",
     "  どれかを3秒押し続ける  時計画面に戻る",
     "  (時計画面で消音にしていると、曲は音を出さずに進みます)",
   ].filter(Boolean);
@@ -3097,6 +3116,8 @@ const SING_ROWS = [["singA", "1枚目"], ["singB", "2枚目"]];
 function buildCharaUi() {
   $("singRows").replaceChildren(...SING_ROWS.map(([key, label]) => faceRow(key, label)));
   $("charaFaces").replaceChildren(...FACE_ROWS.map(([key, label]) => faceRow(key, label)));
+  $("idleShow").onchange = () => { chara.idleShow = $("idleShow").value; charaChanged(); };
+  $("idleOff").onchange = () => { const v = Math.max(0, Math.min(600, Math.round(+$("idleOff").value) || 0)); $("idleOff").value = v; chara.idleOff = v; charaChanged(); };
   $("singMode").onchange = () => { chara.singMode = $("singMode").value; if (chara.singMode === "anim" && !chara.singCount) chara.singCount = 1; charaChanged(); };
   $("singFirst").onchange = () => { chara.singFirst = +$("singFirst").value; charaChanged(); };
   $("singCount").onchange = () => { chara.singCount = Math.max(1, Math.min(999, Math.round(+$("singCount").value) || 1)); charaChanged(); };
@@ -3165,6 +3186,7 @@ function renderChara() {
   $("fps").hidden = chara.enabled;
   if (!chara.enabled) return;
   const n = state.frames.length;
+  $("idleShow").value = chara.idleShow; $("idleOff").value = chara.idleOff;
   $("singMode").value = chara.singMode;
   $("singRows").hidden = chara.singMode === "anim";
   $("singRows").children[1].hidden = chara.singMode !== "faces";
@@ -3283,6 +3305,7 @@ function makeDaysBg() {
 
 /* ---- プレビュー: ポケステと同じ動き (chara.js) を 30Hz で動かす ---- */
 /* padLatch: 1tick より短いタップも1回は押したことにする */
+let charaClockOffset = 0;
 let charaEngine = null, padBits = 0, keyBits = 0, padLatch = 0, charaMode = "idle";
 function charaTick() {
   if (!charaEngine) {
@@ -3290,7 +3313,12 @@ function charaTick() {
     const pmu = songHasNotes() ? { count: song.bars * 16, steplen: stepLen(song.bpm) } : null;
     charaEngine = CharaEngine(Array.from(words), state.frames.map(frameToWords), pmu);
   }
-  const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date()));
+  const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date(Date.now() + charaClockOffset)));
+  if (r.event === "settime") {          // プレビューでは端末の時計は変えずに、ずらした時刻を使う
+    const e = r.settime.ed;
+    charaClockOffset = new Date(2000 + e[0], e[1] - 1, e[2], e[3], e[4], 0).getTime() - Date.now();
+    toast(`プレビューの時計を ${2000 + e[0]}/${e[1]}/${e[2]} ${e[3]}:${String(e[4]).padStart(2, "0")} に合わせました`);
+  }
   padLatch = 0;
   if (r.event === "sing") startMusic(0, "chara", song, true);
   if ((r.event === "stop" || r.event === "end") && musicFrom === "chara") stopMusic();
@@ -3303,7 +3331,7 @@ function charaTick() {
   }
   charaMode = r.mode;
   drawLcd(wordsToFrame(r.fb));
-  $("count").textContent = { idle: "待機", clock: "日付と時計", days: "日数", sing: "曲" }[r.mode] || "";
+  $("count").textContent = { idle: chara.idleShow === "clock" ? "待機 (日付と時計)" : "待機", sleep: "表示を消しています (決定で戻る)", clock: "日付と時計 (決定を長押しで時刻合わせ)", days: "日数", sing: "曲", set: "時刻合わせ: ▲▼で変える ◀▶で項目 決定で決める" }[r.mode] || "";
 }
 
 /* ============================================================

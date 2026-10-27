@@ -138,7 +138,7 @@ def color_icon(frame):
 
 BUTTONS = {"fire": 1, "right": 2, "left": 4, "down": 8, "up": 16}
 NONE = 0xFFFFFFFF
-PCHR_WORDS = 40
+PCHR_WORDS = 44
 
 
 def day_number(y, m, d):
@@ -158,7 +158,7 @@ def build_pchr(c):
     y, m, d = (int(x) for x in c.get("baseDate", "2026-01-22").split("-"))
     cmd = [btn(b) for b in c.get("cmd", [])][:8]
     w = [0] * PCHR_WORDS
-    w[0], w[1] = 0x52484350, 2
+    w[0], w[1] = 0x52484350, 3
     w[2], w[3] = fr(c.get("idle", 0)), fr(c.get("blink"))
     faces = (c.get("faces") or [None] * 5) + [None] * 5
     for i in range(5):
@@ -187,6 +187,9 @@ def build_pchr(c):
     w[36] = max(0, int(c.get("singCount", 0) or 0)) if anim else 0
     w[37] = max(1, min(30, int(c.get("singDelay", 4) or 4)))
     w[38] = max(0, min(4, int(c.get("singSync", 3) or 0)))
+    # version 3: 待機を日付と時計にする・一定時間で表示を消す
+    w[40] = 1 if c.get("idleShow") == "clock" else 0
+    w[41] = 0 if not c.get("idleOff") else tick(c.get("idleOff"))
     return struct.pack(f"<{PCHR_WORDS}I", *w)
 
 

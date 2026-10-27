@@ -329,6 +329,15 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
       <div id="charaBody" hidden class="midi-body">
         <p class="note">コマ (上のコマ列の絵) を、表情や背景に割り当てます。顔の絵は「画像から変換」や「ドット編集」で作ってください。</p>
         <div class="subpanel">
+          <h3>待機の表示</h3>
+          <div class="chara-grid">
+            <div class="field"><label for="idleShow">待機しているときに出すもの</label>
+              <select id="idleShow"><option value="clock">日付と時計</option><option value="face">キャラクターの顔 (待機の顔)</option></select></div>
+            <div class="field"><label for="idleOff">表示を消すまで (秒・0 で消さない)</label><input id="idleOff" type="number" min="0" max="600" step="5" value="30" inputmode="numeric"></div>
+          </div>
+          <p class="note">決められた時間ボタンを押さないと表示が消えます。消えたあとは決定ボタンを押すと、また表示されます (ほかのボタンでは戻りません)。日付と時計のときも、ボタンを押すと表情のコマを少しのあいだ出せます。</p>
+        </div>
+        <div class="subpanel">
           <h3>表情</h3>
           <div class="row"><button type="button" id="charaSample">見本の顔を入れて試す</button><span class="note">シンプルな顔のコマを7枚足して割り当てます。自分の絵に入れ替えて使ってください。</span></div>
           <div class="faces" id="charaFaces"></div>
@@ -370,7 +379,8 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
             </div>
             <p class="note">8個まで。曲は作曲パネルの曲を使います。曲の途中で決定を押すと止まります。</p>
           </div>
-          <p class="note">どのボタンでも3秒押し続けると、ポケステの時計画面に戻ります。</p>
+          <p class="note">日付と時計を出しているときに決定を長押しすると、日付と時刻を合わせられます (▲▼で数字を変える、◀▶で 年・月・日・時・分 を選ぶ、決定で決める)。</p>
+          <p class="note">どのボタンでも3秒押し続けると、ポケステの時計画面に戻ります (時刻合わせの間は除く)。</p>
           <ul class="warn" id="charaWarn"></ul>
           <p class="note" id="charaInfo"></p>
         </div>
@@ -702,6 +712,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           <dt>2回押し</dt><dd>日付と時計 (どのボタンかは設定で選ぶ)</dd>
           <dt>長押し</dt><dd>基準日からの日数</dd>
           <dt>コマンド</dt><dd>曲を最後まで鳴らして待機に戻る (決定で止める)</dd>
+          <dt>時刻合わせ</dt><dd>日付と時計の表示中に決定を長押し → ▲▼で変える、◀▶で項目、決定で決める</dd>
           <dt>3秒押す</dt><dd>時計画面に戻る</dd>
         </dl>
       </details>
@@ -1739,7 +1750,8 @@ const PCHR = {
   MAGIC: 0, VERSION: 1, IDLE: 2, BLINK: 3, FACE: 4, FACE_HOLD: 9, CLOCK_BG: 10, DAYS_BG: 11,
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
   DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32,
-  SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38, WORDS: 40,
+  SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
+  IDLE_CLOCK: 40, IDLE_OFF: 41, WORDS: 44,
 };
 const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
@@ -1786,8 +1798,8 @@ function CharaEngine(cfg, frames, song) {
     if (m > 2 && (y & 3) === 0) n++;
     return n;
   }
-  function drawClock(rtc) {
-    const date = rtc.date >>> 0, time = rtc.time >>> 0;
+  function drawClock(rtc) { drawClockAt(rtc.date >>> 0, rtc.time >>> 0); }
+  function drawClockAt(date, time) {
     fbFrame(cfg[PCHR.CLOCK_BG]);
     const mon = (date >>> 8) & 0xFF, day = date & 0xFF;
     clearRect(0, 0, 32, 7);
@@ -1805,6 +1817,43 @@ function CharaEngine(cfg, frames, song) {
     const bar = ((((1 << len) >>> 0) - 1) << 1) >>> 0;
     fb[29] = (fb[29] | bar) >>> 0;
     fb[30] = (fb[30] | (0x15555554 & ~bar)) >>> 0;
+  }
+  // 時刻合わせ (chara.c と同じ)
+  const toBcd = (v) => ((Math.floor(v / 10)) << 4) | (v % 10);
+  const monthLen = (y, m) => [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1] + (m === 2 && (y & 3) === 0 ? 1 : 0);
+  const weekdayOf = (y, m, d) => ((dayNumber(y, m, d) + 6) % 7) + 1;
+  const SET_RECT = [[1, 22, 15, 5], [7, 1, 7, 5], [19, 1, 7, 5], [1, 9, 13, 10], [18, 9, 13, 10]];
+  const ed = [26, 1, 1, 0, 0];
+  let edF = 0;
+  function setLoad(rtc) {
+    const date = rtc.date >>> 0, time = rtc.time >>> 0;
+    const y = bcd((date >>> 24) & 0xFF) * 100 + bcd((date >>> 16) & 0xFF);
+    ed[0] = y >= 2000 && y <= 2099 ? y - 2000 : 26;
+    ed[1] = bcd((date >>> 8) & 0xFF); ed[2] = bcd(date & 0xFF);
+    if (ed[1] < 1 || ed[1] > 12) ed[1] = 1;
+    if (ed[2] < 1 || ed[2] > 31) ed[2] = 1;
+    ed[3] = bcd((time >>> 16) & 0xFF); ed[4] = bcd((time >>> 8) & 0xFF);
+    if (ed[3] > 23) ed[3] = 0;
+    if (ed[4] > 59) ed[4] = 0;
+    edF = 0;
+  }
+  function setStep(dir) {
+    const lo = [0, 1, 1, 0, 0], hi = [99, 12, 31, 23, 59];
+    const h = edF === 2 ? monthLen(2000 + ed[0], ed[1]) : hi[edF];
+    if (dir > 0) ed[edF] = ed[edF] >= h ? lo[edF] : ed[edF] + 1;
+    else ed[edF] = ed[edF] <= lo[edF] ? h : ed[edF] - 1;
+    const ml = monthLen(2000 + ed[0], ed[1]);
+    if (ed[2] > ml) ed[2] = ml;
+  }
+  const setDate = () => ((0x20 << 24) | (toBcd(ed[0]) << 16) | (toBcd(ed[1]) << 8) | toBcd(ed[2])) >>> 0;
+  const setTime = () => ((weekdayOf(2000 + ed[0], ed[1], ed[2]) << 24) | (toBcd(ed[3]) << 16) | (toBcd(ed[4]) << 8)) >>> 0;
+  function drawSet() {
+    drawClockAt(setDate(), (setTime() | 1) >>> 0);
+    for (const r of [11, 12, 15, 16]) fb[r] = (fb[r] | (3 << 15)) >>> 0;
+    fb[29] = 0; fb[30] = 0;
+    if ((now >> 3) & 1) { const r = SET_RECT[edF]; clearRect(r[0], r[1], r[2], r[3]); }
+    clearRect(20, 21, 12, 7);
+    putSmall(21, 22, S.S); putSmall(25, 22, S.E); putSmall(29, 22, S.T);
   }
   function drawDays(rtc) {
     const date = rtc.date >>> 0;
@@ -1827,13 +1876,17 @@ function CharaEngine(cfg, frames, song) {
   }
 
   // 状態 (chara.c の chara_main のローカル変数と同じ)
-  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3;
+  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3, SET = 4;
   const cmdLen = Math.min(8, cfg[PCHR.CMD_LEN]);
   let now = 0, mode = IDLE, modeT = 0, face = cfg[PCHR.IDLE], faceT = 0;
   let blinkT = 0, blinkNext = 100, blinkOn = 0;
   let prev = 0, hold = 0, longT = 0, longDone = 0, pending = 0;
   let singing = 0, singAt = 0;
   let animIdx = 0, animWait = 0, animK = 0, singT0 = 0;
+  let clockFire = 0, setWait = 0, setIdle = 0, rep = 0;
+  const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
+  const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
+  let idleT = 0, asleep = 0;
   const histB = [], histT = [];
   const histPush = (b, t) => { if (histB.length === 8) { histB.shift(); histT.shift(); } histB.push(b); histT.push(t); };
   const histClear = () => { histB.length = 0; histT.length = 0; };
@@ -1855,26 +1908,54 @@ function CharaEngine(cfg, frames, song) {
   }
 
   function tick(btn, rtc) {
-    let event = null;
+    let event = null, settime = null;
     now++;
     btn &= 0x1F;
-    const down = btn & ~prev;
+    let down = btn & ~prev;
     hold = (btn && btn === prev) ? hold + 1 : (btn ? 1 : 0);
     prev = btn;
+    if (mode === SET) hold = 0;
     if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
+    if (mode !== IDLE) { idleT = 0; asleep = 0; }
+    else if (asleep) {
+      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); }
+      down = 0;
+    } else if (btn) idleT = 0;
+    else if (idleOff && ++idleT >= idleOff) { asleep = 1; face = cfg[PCHR.IDLE]; faceT = 0; pending = 0; histClear(); }
     if (cfg[PCHR.LONG_BTN] && (btn & cfg[PCHR.LONG_BTN])) {
       if (++longT >= cfg[PCHR.LONG] && !longDone) {
         longDone = 1;
-        if (mode === IDLE) { mode = DAYS; modeT = cfg[PCHR.SHOW]; pending = 0; histClear(); }
+        if (mode === IDLE && !asleep) { mode = DAYS; modeT = cfg[PCHR.SHOW]; pending = 0; histClear(); }
       }
     } else { longT = 0; longDone = 0; }
+    if (mode === SET) {
+      if (setWait) { if (!btn) setWait = 0; down = 0; }
+      if (down) setIdle = 0;
+      if (++setIdle >= 30 * 30) mode = IDLE;
+      if (down & 16) setStep(1);
+      if (down & 8) setStep(-1);
+      if (down & 4) edF = edF ? edF - 1 : 4;
+      if (down & 2) edF = edF === 4 ? 0 : edF + 1;
+      if (btn & 24) { if (++rep >= 12 && ((rep - 12) & 3) === 3) setStep((btn & 16) ? 1 : -1); } else rep = 0;
+      if (down & 1) {
+        event = "settime"; settime = { date: setDate(), time: setTime(), ed: ed.slice() };
+        mode = CLOCK; modeT = cfg[PCHR.SHOW]; clockFire = 0; longDone = 1;
+      }
+      down = 0;
+    }
+    if (mode === CLOCK && clockFire) {
+      if (btn & 1) {
+        if (++clockFire > cfg[PCHR.LONG]) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; clockFire = 0; hold = 0; }
+      } else { clockFire = 0; mode = IDLE; longDone = 1; histClear(); }
+    }
     for (let b = 1; b <= 16; b <<= 1) {
       if (!(down & b)) continue;
       if (mode === SING) {
         if (b === 1) { if (singing) event = "stop"; singing = 0; mode = IDLE; face = cfg[PCHR.IDLE]; }
         continue;
       }
-      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
+      if (mode === CLOCK && b === 1) { clockFire = 1; continue; }
+      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); clockFire = 0; continue; }
       histPush(b, now);
       if (cmdLen && histMatches(cmdLen)) {
         histClear(); pending = 0;
@@ -1896,7 +1977,9 @@ function CharaEngine(cfg, frames, song) {
 
     if (mode === CLOCK || mode === DAYS) {
       if (mode === CLOCK) drawClock(rtc); else drawDays(rtc);
-      if (--modeT === 0) mode = IDLE;
+      if (!clockFire && --modeT === 0) mode = IDLE;
+    } else if (mode === SET) {
+      drawSet();
     } else if (mode === SING) {
       const st = singing ? songState() : null;
       const first = cfg[PCHR.SING_FIRST];
@@ -1924,13 +2007,15 @@ function CharaEngine(cfg, frames, song) {
       }
     } else {
       if (faceT && --faceT === 0) face = cfg[PCHR.IDLE];
+      if (asleep) { fb.fill(0); return { fb, exit: false, event, settime, mode: "sleep" }; }
+      if (idleClock && !faceT) { drawClock(rtc); return { fb, exit: false, event, settime, mode: "idle" }; }
       if (face === cfg[PCHR.IDLE] && cfg[PCHR.BLINK] < count) {
         if (blinkOn) { if (--blinkOn === 0) blinkT = 0; }
         else if (++blinkT >= blinkNext) { blinkOn = 4; blinkNext = blinkNext === 100 ? 160 : 100; }
       } else { blinkOn = 0; blinkT = 0; }
       fbFrame(blinkOn ? cfg[PCHR.BLINK] : face);
     }
-    return { fb, exit: false, event, mode: ["idle", "clock", "days", "sing"][mode] };
+    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set"][mode] };
   }
   return { tick };
 }
@@ -2104,7 +2189,7 @@ if (typeof module !== "undefined") module.exports = { cardBlank, cardParse, card
  * 共通データ
  * ============================================================ */
 const N = 32;
-const PLAYER_B64 = "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";
+const PLAYER_B64 = "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";
 const STORE_KEY = "poc-dot-studio-v1";
 
 const state = {
@@ -4366,6 +4451,7 @@ function newChara() {
     baseDate: "2026-01-22", countFrom: 0, daysY: 12,
     show: 5, dblWin: 0.4, longTime: 1, cmdGap: 1, exit: 3,
     singMode: "faces", singFirst: 0, singCount: 4, singSync: 3, singDelay: 4,
+    idleShow: "clock", idleOff: 30,
   };
 }
 let chara = newChara();
@@ -4390,6 +4476,8 @@ function validChara(x) {
   c.singMode = ["faces", "image", "anim"].includes(x.singMode) ? x.singMode : "faces";
   c.singFirst = Math.max(0, fr(x.singFirst)); c.singCount = Math.round(num(x.singCount, 1, 999, 4));
   c.singSync = Math.round(num(x.singSync, 0, 4, 3)); c.singDelay = Math.round(num(x.singDelay, 1, 30, 4));
+  c.idleShow = x.idleShow === "face" ? "face" : "clock";
+  c.idleOff = Math.round(num(x.idleOff, 0, 600, 30));
   return c;
 }
 
@@ -4400,7 +4488,7 @@ function pcharWords(c) {
   const tick = (sec) => Math.max(1, Math.round(sec * 30));
   const btn = (b) => CHARA_BTN[b] || 0;
   const [y, m, d] = c.baseDate.split("-").map(Number);
-  w[0] = 0x52484350; w[1] = 2;
+  w[0] = 0x52484350; w[1] = 3;
   w[2] = c.idle < state.frames.length ? c.idle : 0; w[3] = fr(c.blink);
   for (let i = 0; i < 5; i++) w[4 + i] = fr(c.faces[i]);
   w[9] = tick(c.faceHold);
@@ -4417,6 +4505,9 @@ function pcharWords(c) {
   w[34] = c.singMode === "anim" ? 1 : 0;
   w[35] = c.singFirst; w[36] = c.singMode === "anim" ? c.singCount : 0;
   w[37] = c.singDelay; w[38] = c.singSync;
+  // version 3: 待機の表示
+  w[40] = c.idleShow === "clock" ? 1 : 0;
+  w[41] = c.idleOff > 0 ? tick(c.idleOff) : 0;
   return w;
 }
 
@@ -4425,11 +4516,13 @@ function charaReadme() {
   const nm = (b) => (CHARA_BTNS.find(([k]) => k === b) || [, ""])[1];
   return [
     "キャラクターモードでの操作:",
-    "  ボタンを押す        表情が変わる (しばらくすると待機の顔に戻る)",
+    chara.idleShow === "clock" ? "  待機中は日付と時計を表示" + (chara.idleOff ? ` (${chara.idleOff}秒さわらないと消える。決定で戻る)` : "") : (chara.idleOff ? `  ${chara.idleOff}秒さわらないと表示が消える。決定で戻る` : ""),
+    "  ボタンを押す        表情が変わる (しばらくすると待機の表示に戻る)",
     chara.dbl ? `  ${nm(chara.dbl)}ボタンを2回押す   日付と時計` : "",
     chara.long ? `  ${nm(chara.long)}ボタンを長押し   ${chara.baseDate} からの日数` : "",
     chara.cmd.length ? `  ${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
     chara.cmd.length && chara.singMode === "anim" ? `  (曲の間はコマ ${chara.singFirst + 1} から ${chara.singCount}コマのアニメーション)` : "",
+    chara.dbl ? "  日付と時計の表示中に決定を長押し  日付と時刻を合わせる (上下で変える・左右で項目・決定で決める)" : "",
     "  どれかを3秒押し続ける  時計画面に戻る",
     "  (時計画面で消音にしていると、曲は音を出さずに進みます)",
   ].filter(Boolean);
@@ -4457,6 +4550,8 @@ const SING_ROWS = [["singA", "1枚目"], ["singB", "2枚目"]];
 function buildCharaUi() {
   $("singRows").replaceChildren(...SING_ROWS.map(([key, label]) => faceRow(key, label)));
   $("charaFaces").replaceChildren(...FACE_ROWS.map(([key, label]) => faceRow(key, label)));
+  $("idleShow").onchange = () => { chara.idleShow = $("idleShow").value; charaChanged(); };
+  $("idleOff").onchange = () => { const v = Math.max(0, Math.min(600, Math.round(+$("idleOff").value) || 0)); $("idleOff").value = v; chara.idleOff = v; charaChanged(); };
   $("singMode").onchange = () => { chara.singMode = $("singMode").value; if (chara.singMode === "anim" && !chara.singCount) chara.singCount = 1; charaChanged(); };
   $("singFirst").onchange = () => { chara.singFirst = +$("singFirst").value; charaChanged(); };
   $("singCount").onchange = () => { chara.singCount = Math.max(1, Math.min(999, Math.round(+$("singCount").value) || 1)); charaChanged(); };
@@ -4525,6 +4620,7 @@ function renderChara() {
   $("fps").hidden = chara.enabled;
   if (!chara.enabled) return;
   const n = state.frames.length;
+  $("idleShow").value = chara.idleShow; $("idleOff").value = chara.idleOff;
   $("singMode").value = chara.singMode;
   $("singRows").hidden = chara.singMode === "anim";
   $("singRows").children[1].hidden = chara.singMode !== "faces";
@@ -4643,6 +4739,7 @@ function makeDaysBg() {
 
 /* ---- プレビュー: ポケステと同じ動き (chara.js) を 30Hz で動かす ---- */
 /* padLatch: 1tick より短いタップも1回は押したことにする */
+let charaClockOffset = 0;
 let charaEngine = null, padBits = 0, keyBits = 0, padLatch = 0, charaMode = "idle";
 function charaTick() {
   if (!charaEngine) {
@@ -4650,7 +4747,12 @@ function charaTick() {
     const pmu = songHasNotes() ? { count: song.bars * 16, steplen: stepLen(song.bpm) } : null;
     charaEngine = CharaEngine(Array.from(words), state.frames.map(frameToWords), pmu);
   }
-  const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date()));
+  const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date(Date.now() + charaClockOffset)));
+  if (r.event === "settime") {          // プレビューでは端末の時計は変えずに、ずらした時刻を使う
+    const e = r.settime.ed;
+    charaClockOffset = new Date(2000 + e[0], e[1] - 1, e[2], e[3], e[4], 0).getTime() - Date.now();
+    toast(`プレビューの時計を ${2000 + e[0]}/${e[1]}/${e[2]} ${e[3]}:${String(e[4]).padStart(2, "0")} に合わせました`);
+  }
   padLatch = 0;
   if (r.event === "sing") startMusic(0, "chara", song, true);
   if ((r.event === "stop" || r.event === "end") && musicFrom === "chara") stopMusic();
@@ -4663,7 +4765,7 @@ function charaTick() {
   }
   charaMode = r.mode;
   drawLcd(wordsToFrame(r.fb));
-  $("count").textContent = { idle: "待機", clock: "日付と時計", days: "日数", sing: "曲" }[r.mode] || "";
+  $("count").textContent = { idle: chara.idleShow === "clock" ? "待機 (日付と時計)" : "待機", sleep: "表示を消しています (決定で戻る)", clock: "日付と時計 (決定を長押しで時刻合わせ)", days: "日数", sing: "曲", set: "時刻合わせ: ▲▼で変える ◀▶で項目 決定で決める" }[r.mode] || "";
 }
 
 /* ============================================================

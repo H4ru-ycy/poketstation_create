@@ -5,6 +5,7 @@
  *   2回押し   : 決めたボタンを素早く2回押すと、日付と時計を表示
  *   長押し    : 決めたボタンを長押しすると、基準日 (公開日など) からの日数を表示
  *   コマンド  : 決めた順にボタンを押すと、曲を最後まで1回鳴らして待機に戻る
+ *   時計の表示中に決定を長押し : 日付と時刻を合わせる (上下で変える、左右で項目、決定で決める)
  *   3秒押し続ける (どのボタンでも) : 時計画面 (GUI) に戻る
  *
  * 設定は変換ツールが書き出す PCHR ブロック (32bitワードの並び。tools/mkpoc.py を参照)。
@@ -42,11 +43,14 @@ enum {
     C_SING_COUNT,            /* アニメーションのコマ数 */
     C_SING_DELAY,            /* 1コマの時間 (tick)。C_SING_SYNC = 0 のとき */
     C_SING_SYNC,             /* 0 = 時間で進める, 1-4 = 曲に合わせる (16分・8分・4分・2分音符ごと) */
-    C_WORDS = 40
+    /* ここから version 3 */
+    C_IDLE_CLOCK = 40,       /* 1 = 待機は日付と時計 (顔の代わりに) */
+    C_IDLE_OFF,              /* 待機の表示を消すまで (tick, 0 = 消さない)。消えたら決定で戻る */
+    C_WORDS = 44
 };
 #define PCHR_MAGIC 0x52484350u   /* "PCHR" */
 
-enum { M_IDLE, M_CLOCK, M_DAYS, M_SING };
+enum { M_IDLE, M_CLOCK, M_DAYS, M_SING, M_SET };
 
 /* 小さい文字の番号 (font.h の SMALL_CHARS の並び) */
 enum { S_A = 10, S_D, S_E, S_F, S_H, S_I, S_M, S_N, S_O, S_R, S_S, S_T, S_U, S_W, S_SLASH, S_COLON, S_MINUS, S_SPACE };
@@ -122,9 +126,8 @@ static u32 day_number(u32 y, u32 m, u32 d)
     return n;
 }
 
-static void draw_clock(void)
+static void draw_clock_at(u32 date, u32 time)
 {
-    u32 date = swi_get_bcd_date(), time = swi_get_bcd_time();
     fb_frame(cfg[C_CLOCK_BG]);
     /* 1行目: 月/日 (まん中) */
     u32 mon = (date >> 8) & 0xFF, day = date & 0xFF;
@@ -155,6 +158,68 @@ static void draw_clock(void)
     if (len > 30) len = 30;
     fb[29] |= ((1u << len) - 1) << 1;
     fb[30] |= 0x15555554u & ~(((1u << len) - 1) << 1);  /* 残りは点線 */
+}
+
+static void draw_clock(void) { draw_clock_at(swi_get_bcd_date(), swi_get_bcd_time()); }
+
+/* ---------------- 時刻合わせ ---------------- */
+static u32 to_bcd(u32 v) { u32 t = 0; while (v >= 10) { v -= 10; t++; } return (t << 4) | v; }
+static u32 month_len(u32 y, u32 m)
+{
+    static const u32 len[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    return len[m - 1] + (m == 2 && (y & 3) == 0);
+}
+static u32 day_number(u32 y, u32 m, u32 d);
+/* 曜日 (1=日曜 … 7=土曜)。2000年1月1日は土曜 */
+static u32 weekday_of(u32 y, u32 m, u32 d)
+{
+    u32 n = day_number(y, m, d) + 6;
+    while (n >= 7 * 64) n -= 7 * 64;
+    while (n >= 7) n -= 7;
+    return n + 1;
+}
+/* 項目: 0=年 1=月 2=日 3=時 4=分。点滅させる場所 */
+static const u32 set_rect[5] = {
+    1 | (22 << 8) | (15 << 16) | (5u << 24), 7 | (1 << 8) | (7 << 16) | (5u << 24), 19 | (1 << 8) | (7 << 16) | (5u << 24),
+    1 | (9 << 8) | (13 << 16) | (10u << 24), 18 | (9 << 8) | (13 << 16) | (10u << 24),
+};
+static u32 ed[5], ed_f;
+static void set_load(void)
+{
+    u32 date = swi_get_bcd_date(), time = swi_get_bcd_time();
+    u32 y = bcd((date >> 24) & 0xFF) * 100 + bcd((date >> 16) & 0xFF);
+    ed[0] = (y >= 2000 && y <= 2099) ? y - 2000 : 26;
+    ed[1] = bcd((date >> 8) & 0xFF); ed[2] = bcd(date & 0xFF);
+    if (ed[1] < 1 || ed[1] > 12) ed[1] = 1;
+    if (ed[2] < 1 || ed[2] > 31) ed[2] = 1;
+    ed[3] = bcd((time >> 16) & 0xFF); ed[4] = bcd((time >> 8) & 0xFF);
+    if (ed[3] > 23) ed[3] = 0;
+    if (ed[4] > 59) ed[4] = 0;
+    ed_f = 0;
+}
+static void set_step(int dir)
+{
+    static const u32 lo[5] = { 0, 1, 1, 0, 0 }, hi[5] = { 99, 12, 31, 23, 59 };
+    u32 h = ed_f == 2 ? month_len(2000 + ed[0], ed[1]) : hi[ed_f];
+    if (dir > 0) ed[ed_f] = ed[ed_f] >= h ? lo[ed_f] : ed[ed_f] + 1;
+    else         ed[ed_f] = ed[ed_f] <= lo[ed_f] ? h : ed[ed_f] - 1;
+    u32 ml = month_len(2000 + ed[0], ed[1]);
+    if (ed[2] > ml) ed[2] = ml;
+}
+static u32 set_date(void) { return (0x20u << 24) | (to_bcd(ed[0]) << 16) | (to_bcd(ed[1]) << 8) | to_bcd(ed[2]); }
+static u32 set_time(void) { return (weekday_of(2000 + ed[0], ed[1], ed[2]) << 24) | (to_bcd(ed[3]) << 16) | (to_bcd(ed[4]) << 8); }
+static void draw_set(u32 now)
+{
+    draw_clock_at(set_date(), set_time() | 1);   /* 秒は1 (コロンは消える) */
+    fb[11] |= 3u << 15; fb[12] |= 3u << 15; fb[15] |= 3u << 15; fb[16] |= 3u << 15;
+    fb[29] = 0; fb[30] = 0;
+    if ((now >> 3) & 1) {                          /* 選んでいる項目を点滅 */
+        u32 r = set_rect[ed_f];
+        fb_clear_rect(r & 0xFF, (r >> 8) & 0xFF, (r >> 16) & 0xFF, r >> 24);
+    }
+    /* 曜日の所に「SET」 (曜日は決めたときに計算して入れる) */
+    fb_clear_rect(20, 21, 12, 7);
+    put_small(21, 22, S_S); put_small(25, 22, S_E); put_small(29, 22, S_T);
 }
 
 static void draw_days(void)
@@ -240,6 +305,9 @@ int chara_main(const u32 *c)
     u32 prev = 0, hold = 0, long_t = 0, long_done = 0;
     u32 pending = 0, singing_sound = 0;
     u32 anim_idx = 0, anim_wait = 0, anim_k = 0, sing_t0 = 0;
+    u32 clock_fire = 0, set_wait = 0, set_idle = 0, rep = 0;
+    u32 idle_clock = cfg[C_VERSION] >= 3 && cfg[C_IDLE_CLOCK];
+    u32 idle_off = cfg[C_VERSION] >= 3 ? cfg[C_IDLE_OFF] : 0, idle_t = 0, asleep = 0;
 
     for (;;) {
         wait_tick();
@@ -252,19 +320,53 @@ int chara_main(const u32 *c)
         /* どのボタンでも押し続けると終了 */
         hold = (btn && btn == prev) ? hold + 1 : (btn ? 1 : 0);
         prev = btn;
+        if (mode == M_SET) hold = 0;                  /* 時刻合わせの間は終了しない */
         if (hold >= cfg[C_EXIT]) {
             if (singing_sound) snd_stop();
             LCD_MODE = 0;
             return 0;
         }
 
+        /* 待機の表示が消えているとき: 決定で戻る。ほかのボタンは何もしない */
+        if (mode != M_IDLE) { idle_t = 0; asleep = 0; }
+        else if (asleep) {
+            if (down & BTN_FIRE) { asleep = 0; idle_t = 0; long_done = 1; hist_n = 0; }
+            down = 0;
+        } else if (btn) idle_t = 0;
+        else if (idle_off && ++idle_t >= idle_off) { asleep = 1; face = cfg[C_IDLE]; face_t = 0; pending = 0; hist_n = 0; }
+
         /* 長押し → 日数 */
         if (cfg[C_LONG_BTN] && (btn & cfg[C_LONG_BTN])) {
             if (++long_t >= cfg[C_LONG] && !long_done) {
                 long_done = 1;
-                if (mode == M_IDLE) { mode = M_DAYS; mode_t = cfg[C_SHOW]; pending = 0; hist_n = 0; }
+                if (mode == M_IDLE && !asleep) { mode = M_DAYS; mode_t = cfg[C_SHOW]; pending = 0; hist_n = 0; }
             }
         } else { long_t = 0; long_done = 0; }
+
+        /* 時刻合わせ */
+        if (mode == M_SET) {
+            if (set_wait) { if (!btn) set_wait = 0; down = 0; }   /* 入ったときの決定を離すまで待つ */
+            if (down) set_idle = 0;
+            if (++set_idle >= TICK_HZ * 30) mode = M_IDLE;    /* 30秒さわらなければやめる */
+            if (down & BTN_UP) set_step(1);
+            if (down & BTN_DOWN) set_step(-1);
+            if (down & BTN_LEFT) ed_f = ed_f ? ed_f - 1 : 4;
+            if (down & BTN_RIGHT) ed_f = ed_f == 4 ? 0 : ed_f + 1;
+            if (btn & (BTN_UP | BTN_DOWN)) {                  /* 押し続けると連続で変わる */
+                if (++rep >= 12 && ((rep - 12) & 3) == 3) set_step((btn & BTN_UP) ? 1 : -1);
+            } else rep = 0;
+            if (down & BTN_FIRE) {
+                swi_set_bcd_datetime(set_date(), set_time());
+                mode = M_CLOCK; mode_t = cfg[C_SHOW]; clock_fire = 0; long_done = 1;
+            }
+            down = 0;
+        }
+        /* 時計の表示中に決定を長押し → 時刻合わせ */
+        if (mode == M_CLOCK && clock_fire) {
+            if (btn & BTN_FIRE) {
+                if (++clock_fire > cfg[C_LONG]) { mode = M_SET; set_load(); set_wait = 1; set_idle = 0; rep = 0; clock_fire = 0; hold = 0; }
+            } else { clock_fire = 0; mode = M_IDLE; long_done = 1; hist_n = 0; }   /* 短く押した → 待機へ */
+        }
 
         for (u32 b = 1; b <= BTN_UP; b <<= 1) {
             if (!(down & b)) continue;
@@ -275,8 +377,9 @@ int chara_main(const u32 *c)
                 }
                 continue;
             }
+            if (mode == M_CLOCK && b == BTN_FIRE) { clock_fire = 1; continue; }   /* 長押しか見る */
             if (mode == M_CLOCK || mode == M_DAYS) {   /* どれか押すと待機に戻る */
-                mode = M_IDLE; long_done = 1; hist_n = 0;
+                mode = M_IDLE; long_done = 1; hist_n = 0; clock_fire = 0;
                 continue;
             }
             hist_push(b, now);
@@ -314,7 +417,10 @@ int chara_main(const u32 *c)
         case M_CLOCK:
         case M_DAYS:
             if (mode == M_CLOCK) draw_clock(); else draw_days();
-            if (--mode_t == 0) mode = M_IDLE;
+            if (!clock_fire && --mode_t == 0) mode = M_IDLE;
+            break;
+        case M_SET:
+            draw_set(now);
             break;
         case M_SING: {
             u32 first = cfg[C_SING_FIRST], n = cfg[C_SING_COUNT];
@@ -344,6 +450,8 @@ int chara_main(const u32 *c)
         }
         default:
             if (face_t && --face_t == 0) face = cfg[C_IDLE];
+            if (asleep) { for (u32 y = 0; y < 32; y++) fb[y] = 0; break; }   /* 表示を消している */
+            if (idle_clock && !face_t) { draw_clock(); break; }          /* 待機は日付と時計 */
             /* まばたき: 待機の顔のときだけ、ときどき */
             if (face == cfg[C_IDLE] && cfg[C_BLINK] < count) {
                 if (blink_on) { if (--blink_on == 0) blink_t = 0; }

@@ -101,6 +101,14 @@ static inline u32 swi_get_bcd_time(void)
     return r0;
 }
 
+/* SetBcdDateTime: 日付と時刻を合わせる (形式は GetBcdDate / GetBcdTime と同じ) */
+static inline void swi_set_bcd_datetime(u32 date, u32 time)
+{
+    register u32 r0 __asm__("r0") = date;
+    register u32 r1 __asm__("r1") = time;
+    __asm__ volatile("swi 0x0C" : "+r"(r0), "+r"(r1) : : "memory", "lr", "r2", "r3", "r12");
+}
+
 static inline u32 swi_prepare_execute(u32 flag, u32 dir_index, u32 param)
 {
     register u32 r0 __asm__("r0") = flag;

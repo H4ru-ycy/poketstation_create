@@ -13,7 +13,8 @@ const PCHR = {
   MAGIC: 0, VERSION: 1, IDLE: 2, BLINK: 3, FACE: 4, FACE_HOLD: 9, CLOCK_BG: 10, DAYS_BG: 11,
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
   DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32,
-  SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38, WORDS: 40,
+  SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
+  IDLE_CLOCK: 40, IDLE_OFF: 41, WORDS: 44,
 };
 const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
@@ -60,8 +61,8 @@ function CharaEngine(cfg, frames, song) {
     if (m > 2 && (y & 3) === 0) n++;
     return n;
   }
-  function drawClock(rtc) {
-    const date = rtc.date >>> 0, time = rtc.time >>> 0;
+  function drawClock(rtc) { drawClockAt(rtc.date >>> 0, rtc.time >>> 0); }
+  function drawClockAt(date, time) {
     fbFrame(cfg[PCHR.CLOCK_BG]);
     const mon = (date >>> 8) & 0xFF, day = date & 0xFF;
     clearRect(0, 0, 32, 7);
@@ -79,6 +80,43 @@ function CharaEngine(cfg, frames, song) {
     const bar = ((((1 << len) >>> 0) - 1) << 1) >>> 0;
     fb[29] = (fb[29] | bar) >>> 0;
     fb[30] = (fb[30] | (0x15555554 & ~bar)) >>> 0;
+  }
+  // 時刻合わせ (chara.c と同じ)
+  const toBcd = (v) => ((Math.floor(v / 10)) << 4) | (v % 10);
+  const monthLen = (y, m) => [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1] + (m === 2 && (y & 3) === 0 ? 1 : 0);
+  const weekdayOf = (y, m, d) => ((dayNumber(y, m, d) + 6) % 7) + 1;
+  const SET_RECT = [[1, 22, 15, 5], [7, 1, 7, 5], [19, 1, 7, 5], [1, 9, 13, 10], [18, 9, 13, 10]];
+  const ed = [26, 1, 1, 0, 0];
+  let edF = 0;
+  function setLoad(rtc) {
+    const date = rtc.date >>> 0, time = rtc.time >>> 0;
+    const y = bcd((date >>> 24) & 0xFF) * 100 + bcd((date >>> 16) & 0xFF);
+    ed[0] = y >= 2000 && y <= 2099 ? y - 2000 : 26;
+    ed[1] = bcd((date >>> 8) & 0xFF); ed[2] = bcd(date & 0xFF);
+    if (ed[1] < 1 || ed[1] > 12) ed[1] = 1;
+    if (ed[2] < 1 || ed[2] > 31) ed[2] = 1;
+    ed[3] = bcd((time >>> 16) & 0xFF); ed[4] = bcd((time >>> 8) & 0xFF);
+    if (ed[3] > 23) ed[3] = 0;
+    if (ed[4] > 59) ed[4] = 0;
+    edF = 0;
+  }
+  function setStep(dir) {
+    const lo = [0, 1, 1, 0, 0], hi = [99, 12, 31, 23, 59];
+    const h = edF === 2 ? monthLen(2000 + ed[0], ed[1]) : hi[edF];
+    if (dir > 0) ed[edF] = ed[edF] >= h ? lo[edF] : ed[edF] + 1;
+    else ed[edF] = ed[edF] <= lo[edF] ? h : ed[edF] - 1;
+    const ml = monthLen(2000 + ed[0], ed[1]);
+    if (ed[2] > ml) ed[2] = ml;
+  }
+  const setDate = () => ((0x20 << 24) | (toBcd(ed[0]) << 16) | (toBcd(ed[1]) << 8) | toBcd(ed[2])) >>> 0;
+  const setTime = () => ((weekdayOf(2000 + ed[0], ed[1], ed[2]) << 24) | (toBcd(ed[3]) << 16) | (toBcd(ed[4]) << 8)) >>> 0;
+  function drawSet() {
+    drawClockAt(setDate(), (setTime() | 1) >>> 0);
+    for (const r of [11, 12, 15, 16]) fb[r] = (fb[r] | (3 << 15)) >>> 0;
+    fb[29] = 0; fb[30] = 0;
+    if ((now >> 3) & 1) { const r = SET_RECT[edF]; clearRect(r[0], r[1], r[2], r[3]); }
+    clearRect(20, 21, 12, 7);
+    putSmall(21, 22, S.S); putSmall(25, 22, S.E); putSmall(29, 22, S.T);
   }
   function drawDays(rtc) {
     const date = rtc.date >>> 0;
@@ -101,13 +139,17 @@ function CharaEngine(cfg, frames, song) {
   }
 
   // 状態 (chara.c の chara_main のローカル変数と同じ)
-  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3;
+  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3, SET = 4;
   const cmdLen = Math.min(8, cfg[PCHR.CMD_LEN]);
   let now = 0, mode = IDLE, modeT = 0, face = cfg[PCHR.IDLE], faceT = 0;
   let blinkT = 0, blinkNext = 100, blinkOn = 0;
   let prev = 0, hold = 0, longT = 0, longDone = 0, pending = 0;
   let singing = 0, singAt = 0;
   let animIdx = 0, animWait = 0, animK = 0, singT0 = 0;
+  let clockFire = 0, setWait = 0, setIdle = 0, rep = 0;
+  const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
+  const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
+  let idleT = 0, asleep = 0;
   const histB = [], histT = [];
   const histPush = (b, t) => { if (histB.length === 8) { histB.shift(); histT.shift(); } histB.push(b); histT.push(t); };
   const histClear = () => { histB.length = 0; histT.length = 0; };
@@ -129,26 +171,54 @@ function CharaEngine(cfg, frames, song) {
   }
 
   function tick(btn, rtc) {
-    let event = null;
+    let event = null, settime = null;
     now++;
     btn &= 0x1F;
-    const down = btn & ~prev;
+    let down = btn & ~prev;
     hold = (btn && btn === prev) ? hold + 1 : (btn ? 1 : 0);
     prev = btn;
+    if (mode === SET) hold = 0;
     if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
+    if (mode !== IDLE) { idleT = 0; asleep = 0; }
+    else if (asleep) {
+      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); }
+      down = 0;
+    } else if (btn) idleT = 0;
+    else if (idleOff && ++idleT >= idleOff) { asleep = 1; face = cfg[PCHR.IDLE]; faceT = 0; pending = 0; histClear(); }
     if (cfg[PCHR.LONG_BTN] && (btn & cfg[PCHR.LONG_BTN])) {
       if (++longT >= cfg[PCHR.LONG] && !longDone) {
         longDone = 1;
-        if (mode === IDLE) { mode = DAYS; modeT = cfg[PCHR.SHOW]; pending = 0; histClear(); }
+        if (mode === IDLE && !asleep) { mode = DAYS; modeT = cfg[PCHR.SHOW]; pending = 0; histClear(); }
       }
     } else { longT = 0; longDone = 0; }
+    if (mode === SET) {
+      if (setWait) { if (!btn) setWait = 0; down = 0; }
+      if (down) setIdle = 0;
+      if (++setIdle >= 30 * 30) mode = IDLE;
+      if (down & 16) setStep(1);
+      if (down & 8) setStep(-1);
+      if (down & 4) edF = edF ? edF - 1 : 4;
+      if (down & 2) edF = edF === 4 ? 0 : edF + 1;
+      if (btn & 24) { if (++rep >= 12 && ((rep - 12) & 3) === 3) setStep((btn & 16) ? 1 : -1); } else rep = 0;
+      if (down & 1) {
+        event = "settime"; settime = { date: setDate(), time: setTime(), ed: ed.slice() };
+        mode = CLOCK; modeT = cfg[PCHR.SHOW]; clockFire = 0; longDone = 1;
+      }
+      down = 0;
+    }
+    if (mode === CLOCK && clockFire) {
+      if (btn & 1) {
+        if (++clockFire > cfg[PCHR.LONG]) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; clockFire = 0; hold = 0; }
+      } else { clockFire = 0; mode = IDLE; longDone = 1; histClear(); }
+    }
     for (let b = 1; b <= 16; b <<= 1) {
       if (!(down & b)) continue;
       if (mode === SING) {
         if (b === 1) { if (singing) event = "stop"; singing = 0; mode = IDLE; face = cfg[PCHR.IDLE]; }
         continue;
       }
-      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
+      if (mode === CLOCK && b === 1) { clockFire = 1; continue; }
+      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); clockFire = 0; continue; }
       histPush(b, now);
       if (cmdLen && histMatches(cmdLen)) {
         histClear(); pending = 0;
@@ -170,7 +240,9 @@ function CharaEngine(cfg, frames, song) {
 
     if (mode === CLOCK || mode === DAYS) {
       if (mode === CLOCK) drawClock(rtc); else drawDays(rtc);
-      if (--modeT === 0) mode = IDLE;
+      if (!clockFire && --modeT === 0) mode = IDLE;
+    } else if (mode === SET) {
+      drawSet();
     } else if (mode === SING) {
       const st = singing ? songState() : null;
       const first = cfg[PCHR.SING_FIRST];
@@ -198,13 +270,15 @@ function CharaEngine(cfg, frames, song) {
       }
     } else {
       if (faceT && --faceT === 0) face = cfg[PCHR.IDLE];
+      if (asleep) { fb.fill(0); return { fb, exit: false, event, settime, mode: "sleep" }; }
+      if (idleClock && !faceT) { drawClock(rtc); return { fb, exit: false, event, settime, mode: "idle" }; }
       if (face === cfg[PCHR.IDLE] && cfg[PCHR.BLINK] < count) {
         if (blinkOn) { if (--blinkOn === 0) blinkT = 0; }
         else if (++blinkT >= blinkNext) { blinkOn = 4; blinkNext = blinkNext === 100 ? 160 : 100; }
       } else { blinkOn = 0; blinkT = 0; }
       fbFrame(blinkOn ? cfg[PCHR.BLINK] : face);
     }
-    return { fb, exit: false, event, mode: ["idle", "clock", "days", "sing"][mode] };
+    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set"][mode] };
   }
   return { tick };
 }

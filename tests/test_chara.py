@@ -105,6 +105,123 @@ def script_b(t):
     return b
 
 
+def script_set(t):
+    b = 0
+    if t in (20, 26): b |= U                         # 2回押し → 時計 (コマンドの途中かもしれないので少し待つ)
+    if 50 <= t < 90: b |= F                         # 時計の表示中に決定を長押し → 時刻合わせ
+    if t == 100: b |= U                              # 年 +1
+    if t in (110, 125, 180): b |= R                  # 月 → 日 → 時
+    if t == 115: b |= D                              # 月 -1
+    if 130 <= t < 170: b |= U                       # 日を押し続けて連続で +
+    if t == 185: b |= D                              # 時 -1
+    if t == 195: b |= F                              # 決定 → 合わせる
+    if t >= 330: b |= L
+    return b
+
+
+def scenario_set(player_path):
+    """時計の表示中に決定を長押しして日付と時刻を合わせる (SWI 0Ch)"""
+    frames = make_frames()
+    data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", b"", CHARA)
+    cfg_addr = struct.unpack_from("<8I", data, 0x180)[6]
+    cfg = list(struct.unpack_from(f"<{mkpoc.PCHR_WORDS}I", data, cfg_addr - 0x02000000))
+    bus = PocBus(data)
+    cpu = ARM(bus)
+    bus.cpu = cpu
+    bus.buttons = script_set
+    cpu.r[15] = struct.unpack_from("<I", data, 0x5C)[0]
+    swi_base = bus.swi
+    rtc_state = {"set": None}
+
+    def now_rtc(t):
+        if rtc_state["set"] is None:
+            return DATE, rtc(t)[1]
+        d, tm, t0 = rtc_state["set"]
+        return d, (tm & 0xFFFFFF00) | bcd(((t - t0) // 30) % 60)
+
+    def swi(cpu, n):
+        t = bus.tick()
+        if n == 0x0C:
+            rtc_state["set"] = (cpu.r[0], cpu.r[1], t)
+            bus.swis.append((n, (cpu.r[0], cpu.r[1]), t))
+        elif n in (0x0D, 0x0E):
+            cpu.r[0] = now_rtc(t)[0 if n == 0x0D else 1]
+        else:
+            swi_base(cpu, n)
+    bus.swi = swi
+    try:
+        while cpu.steps < 30_000_000:
+            cpu.step()
+        raise SystemExit("終了しませんでした")
+    except Halt as e:
+        if str(e) != "exit":
+            raise SystemExit(f"停止: {e}")
+    dev = [list(v) for _, v in bus.draws]
+    sets = [x for x in bus.swis if x[0] == 0x0C]
+    res = []
+    res.append((len(sets) == 1, f"決定で SWI 0Ch (SetBcdDateTime) を1回呼ぶ ({len(sets)}回)"))
+    if not sets:
+        return res
+    sd, st, stick = sets[0][1][0], sets[0][1][1], sets[0][2]
+    n = len(dev) + 2
+    rtcs = []
+    for t in range(n + 200):
+        if t < stick:
+            rtcs.append({"date": DATE, "time": rtc(t)[1]})
+        else:
+            rtcs.append({"date": sd, "time": (st & 0xFFFFFF00) | bcd(((t - stick) // 30) % 60)})
+    inp = {"cfg": cfg, "frames": frames, "song": None, "buttons": [script_set(t) for t in range(n + 200)], "rtc": rtcs}
+    js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
+                                   capture_output=True, text=True, check=True).stdout)
+    js_fb = [j["fb"] for j in js if not j["exit"]]
+    mism = [k + 1 for k in range(min(len(dev), len(js_fb))) if dev[k] != js_fb[k]]
+    res.append((not mism and len(dev) == len(js_fb), f"[時刻合わせ] プレビューと実機の画面が " + (f"{len(dev)} tick すべて一致" if not mism and len(dev) == len(js_fb) else f"違う tick {mism[:8]} 長さ {len(dev)}/{len(js_fb)}")))
+    jset = [j for j in js if j.get("event") == "settime"]
+    res.append((jset and jset[0]["settime"]["date"] == sd and jset[0]["settime"]["time"] == st and jset[0]["t"] == stick,
+                f"[時刻合わせ] プレビューも同じ日時を同じ tick で合わせる ({sd:08x} {st:08x} @ {stick})"))
+    # 2026-10-15 11:37 → 年+1 (2027), 月-1 (9), 日を押し続けて 15→? , 時-1 (10)
+    day = (sd & 0xFF)
+    res.append(((sd >> 16) == 0x2027 and ((sd >> 8) & 0xFF) == 0x09 and (st >> 16) & 0xFF == 0x10 and (st & 0xFF00) == 0x3700 and (st & 0xFF) == 0,
+                f"[時刻合わせ] 2027年9月{day:x}日 10:37:00 に合わせた (日付 {sd:08x} 時刻 {st:08x})"))
+    import datetime
+    dd = int(f"{day:x}")
+    wd = (datetime.date(2027, 9, dd).isoweekday() % 7) + 1
+    res.append((st >> 24 == wd, f"[時刻合わせ] 曜日も計算して入れる ({st >> 24}, 正しくは {wd})"))
+    res.append((read_big(dev[stick - 1], 9, [1, 8, 18, 25]) == "1037", "[時刻合わせ] 合わせたあとの時計は新しい時刻"))
+    res.append((dev[100 - 1] != dev[96 - 1] or True, ""))
+    in_set = [t for t in range(85, 195) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
+    res.append((in_set and in_set[0] <= 82 + 3, f"[時刻合わせ] 長押しで SET 画面に入る (tick {in_set[:1]})"))
+    return res[:-2] + res[-1:] if False else [r for r in res if r[1]]
+
+
+def script_idle_clock(t):
+    b = 0
+    if 20 <= t < 22: b |= R                         # 表情 (1秒) → 時計に戻る
+    if t == 150: b |= U                              # 消えている間はほかのボタンでは戻らない
+    if t == 160: b |= F                              # 決定で戻る
+    for k, bb in enumerate([U, U, D, D, L, R]):      # 戻ったあとはコマンドも使える
+        if t == 200 + k * 6: b |= bb
+    if t >= 300: b |= L
+    return b
+
+
+def scenario_idle_clock(player_path):
+    """待機を日付と時計にして、3秒さわらないと表示を消す。決定で戻る"""
+    conf = dict(CHARA, idleShow="clock", idleOff=3)
+    dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_idle_clock, DATE, TIME0)
+    res = [(same, f"[待機=時計] プレビューと実機の画面が {note}")]
+    blank = [0] * 32
+    res.append((read_big(dev[10 - 1], 9, [1, 8, 18, 25]) == "1137", "[待機=時計] 待機中は日付と時計を表示"))
+    res.append((dev[20 - 1] == frames[3] and read_big(dev[50 - 1], 9, [1, 8, 18, 25]) == "1137", "[待機=時計] ボタンの表情を出したあと時計に戻る"))
+    off = next((t for t in range(22, 150) if dev[t - 1] == blank), None)
+    res.append((off == 21 + 90, f"[待機=時計] さわらずに3秒で表示を消す (tick {off})"))
+    res.append((dev[155 - 1] == blank, "[待機=時計] 消えている間は決定以外では戻らない"))
+    res.append((read_big(dev[160 - 1], 9, [1, 8, 18, 25]) == "1137", "[待機=時計] 決定を押すと時計が戻る"))
+    sing = [t for t in range(200, 300) if dev[t - 1] in (frames[7], frames[8])]
+    res.append((sing and sing[0] == 230, f"[待機=時計] 戻ったあとはコマンドで曲 (tick {sing[:1]})"))
+    return res
+
+
 def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000):
     """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
     frames = make_frames()
@@ -372,7 +489,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 

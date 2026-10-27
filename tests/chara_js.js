@@ -9,7 +9,7 @@ const eng = CharaEngine(inp.cfg, inp.frames.map((f) => Uint32Array.from(f)), inp
 const out = [];
 for (let t = 1; t < inp.buttons.length; t++) {
   const r = eng.tick(inp.buttons[t], inp.rtc[t]);
-  out.push({ t, fb: Array.from(r.fb), event: r.event, exit: r.exit, mode: r.mode });
+  out.push({ t, fb: Array.from(r.fb), event: r.event, settime: r.settime, exit: r.exit, mode: r.mode });
   if (r.exit) break;
 }
 process.stdout.write(JSON.stringify(out));

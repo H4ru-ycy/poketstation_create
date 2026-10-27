@@ -3,7 +3,7 @@ armsim.py - テスト用の最小 ARMv4 (ARM命令のみ) シミュレータ
 
 PocketStation 実機の代わりに player を動かし、
 液晶VRAM・ボタン・タイマ・SWI を模擬して動作を確認するためのもの。
-対応: データ処理命令, MUL/MLA, LDR/STR(B/H無しのword/byte), LDM/STM, B/BL/BX, SWI
+対応: データ処理命令, MUL/MLA/UMULL/SMULL, LDR/STR(B/H無しのword/byte), LDM/STM, B/BL/BX, SWI
 """
 import struct
 
@@ -96,6 +96,20 @@ class ARM:
             self.r[rd] = res
             if ins & (1 << 20):
                 self.N, self.Z = res >> 31, int(res == 0)
+            return
+        if (ins & 0x0F8000F0) == 0x00800090:          # UMULL / UMLAL / SMULL / SMLAL
+            hi, lo, rs, rm = (ins >> 16) & 15, (ins >> 12) & 15, (ins >> 8) & 15, ins & 15
+            a, b = self.r[rm], self.r[rs]
+            if ins & (1 << 22):                         # 符号つき
+                a = a - (1 << 32) if a & 0x80000000 else a
+                b = b - (1 << 32) if b & 0x80000000 else b
+            res = a * b
+            if ins & (1 << 21):
+                res += (self.r[hi] << 32) | self.r[lo]
+            res &= (1 << 64) - 1
+            self.r[lo], self.r[hi] = res & M32, res >> 32
+            if ins & (1 << 20):
+                self.N, self.Z = res >> 63, int(res == 0)
             return
         if op in (0, 1):
             if op == 0 and (ins & 0x90) == 0x90:
