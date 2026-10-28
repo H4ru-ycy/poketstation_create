@@ -222,6 +222,31 @@ def scenario_idle_clock(player_path):
     return res
 
 
+def script_user(t):
+    b = 0
+    if 30 <= t < 70: b |= F                         # 待機 (時計) で決定を長押し → 時刻合わせ
+    if t == 80: b |= U                               # 年 +1
+    if t == 90: b |= F                               # 決める
+    if 200 <= t < 240: b |= U                       # 上の長押し → 日数
+    for k, bb in enumerate([U, U, D, D, L, R]):
+        if t == 300 + k * 6: b |= bb
+    if t >= 420: b |= L
+    return b
+
+
+def scenario_user(player_path):
+    """待機=時計、上の長押しで日数、2回押しなし、曲の間は1枚の画像。決定の長押しで時刻合わせ"""
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None)
+    dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_user, DATE, TIME0)
+    res = [(same, f"[待機=時計・上で日数] プレビューと実機の画面が {note}")]
+    set_ticks = [t for t in range(30, 100) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
+    res.append((set_ticks and set_ticks[0] == 30 + 30, f"[待機=時計・上で日数] 決定の長押しで時刻合わせ (tick {set_ticks[:1]})"))
+    res.append((read_big(dev[200 + 29 - 1], 12, [6, 13, 20]) == "266", "[待機=時計・上で日数] 上の長押しで日数 (266)"))
+    sing = [t for t in range(300, 400) if dev[t - 1] == frames[7]]
+    res.append((sing and sing[0] == 330, f"[待機=時計・上で日数] コマンドで曲と画像 (tick {sing[:1]})"))
+    return res
+
+
 def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000):
     """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
     frames = make_frames()
@@ -238,6 +263,8 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
     def swi(cpu, n):
         if n in (0x0D, 0x0E):
             cpu.r[0] = date if n == 0x0D else time
+        elif n == 0x0C:                       # 時刻合わせ (ここでは時計は進めない)
+            bus.swis.append((n, (cpu.r[0], cpu.r[1]), bus.tick()))
         else:
             swi_base(cpu, n)
     bus.swi = swi
@@ -489,7 +516,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 

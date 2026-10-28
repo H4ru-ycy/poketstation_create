@@ -308,6 +308,7 @@ int chara_main(const u32 *c)
     u32 clock_fire = 0, set_wait = 0, set_idle = 0, rep = 0;
     u32 idle_clock = cfg[C_VERSION] >= 3 && cfg[C_IDLE_CLOCK];
     u32 idle_off = cfg[C_VERSION] >= 3 ? cfg[C_IDLE_OFF] : 0, idle_t = 0, asleep = 0;
+    u32 fire_t = 0, fire_block = 0;   /* 待機が時計のとき: 決定の長押しで時刻合わせ */
 
     for (;;) {
         wait_tick();
@@ -330,7 +331,7 @@ int chara_main(const u32 *c)
         /* 待機の表示が消えているとき: 決定で戻る。ほかのボタンは何もしない */
         if (mode != M_IDLE) { idle_t = 0; asleep = 0; }
         else if (asleep) {
-            if (down & BTN_FIRE) { asleep = 0; idle_t = 0; long_done = 1; hist_n = 0; }
+            if (down & BTN_FIRE) { asleep = 0; idle_t = 0; long_done = 1; hist_n = 0; fire_block = 1; }
             down = 0;
         } else if (btn) idle_t = 0;
         else if (idle_off && ++idle_t >= idle_off) { asleep = 1; face = cfg[C_IDLE]; face_t = 0; pending = 0; hist_n = 0; }
@@ -357,9 +358,18 @@ int chara_main(const u32 *c)
             } else rep = 0;
             if (down & BTN_FIRE) {
                 swi_set_bcd_datetime(set_date(), set_time());
-                mode = M_CLOCK; mode_t = cfg[C_SHOW]; clock_fire = 0; long_done = 1;
+                mode = idle_clock ? M_IDLE : M_CLOCK;     /* 待機が時計なら、そのまま待機へ */
+                mode_t = cfg[C_SHOW]; clock_fire = 0; long_done = 1; idle_t = 0; fire_block = 1;
             }
             down = 0;
+        }
+        /* 待機が日付と時計のとき: 決定を長押し → 時刻合わせ (長押しの日数が決定ボタンでなければ) */
+        if (!(btn & BTN_FIRE)) { fire_t = 0; fire_block = 0; }
+        else if (mode == M_IDLE && idle_clock && !asleep && !fire_block && cfg[C_LONG_BTN] != BTN_FIRE) {
+            if (++fire_t > cfg[C_LONG]) {
+                mode = M_SET; set_load(); set_wait = 1; set_idle = 0; rep = 0; hold = 0; fire_t = 0; pending = 0; hist_n = 0;
+                down = 0;
+            }
         }
         /* 時計の表示中に決定を長押し → 時刻合わせ */
         if (mode == M_CLOCK && clock_fire) {

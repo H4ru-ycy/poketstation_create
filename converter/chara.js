@@ -149,7 +149,7 @@ function CharaEngine(cfg, frames, song) {
   let clockFire = 0, setWait = 0, setIdle = 0, rep = 0;
   const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
   const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
-  let idleT = 0, asleep = 0;
+  let idleT = 0, asleep = 0, fireT = 0, fireBlock = 0;
   const histB = [], histT = [];
   const histPush = (b, t) => { if (histB.length === 8) { histB.shift(); histT.shift(); } histB.push(b); histT.push(t); };
   const histClear = () => { histB.length = 0; histT.length = 0; };
@@ -181,7 +181,7 @@ function CharaEngine(cfg, frames, song) {
     if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
     if (mode !== IDLE) { idleT = 0; asleep = 0; }
     else if (asleep) {
-      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); }
+      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); fireBlock = 1; }
       down = 0;
     } else if (btn) idleT = 0;
     else if (idleOff && ++idleT >= idleOff) { asleep = 1; face = cfg[PCHR.IDLE]; faceT = 0; pending = 0; histClear(); }
@@ -202,9 +202,13 @@ function CharaEngine(cfg, frames, song) {
       if (btn & 24) { if (++rep >= 12 && ((rep - 12) & 3) === 3) setStep((btn & 16) ? 1 : -1); } else rep = 0;
       if (down & 1) {
         event = "settime"; settime = { date: setDate(), time: setTime(), ed: ed.slice() };
-        mode = CLOCK; modeT = cfg[PCHR.SHOW]; clockFire = 0; longDone = 1;
+        mode = idleClock ? IDLE : CLOCK; modeT = cfg[PCHR.SHOW]; clockFire = 0; longDone = 1; idleT = 0; fireBlock = 1;
       }
       down = 0;
+    }
+    if (!(btn & 1)) { fireT = 0; fireBlock = 0; }
+    else if (mode === IDLE && idleClock && !asleep && !fireBlock && cfg[PCHR.LONG_BTN] !== 1) {
+      if (++fireT > cfg[PCHR.LONG]) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; hold = 0; fireT = 0; pending = 0; histClear(); down = 0; }
     }
     if (mode === CLOCK && clockFire) {
       if (btn & 1) {
