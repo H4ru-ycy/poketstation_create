@@ -89,6 +89,9 @@ class ARM:
             return
         if (ins >> 24) & 15 == 15:                     # SWI
             self.bus.swi(self, ins & 0xFF)
+            # 実機の BIOS と同じく r1-r3, r12 は壊れることがある (呼び出し規約)。わざと壊して確かめる
+            for k in (1, 2, 3, 12):
+                self.r[k] = (0xDEAD0000 | k) & M32
             return
         if (ins & 0x0FC000F0) == 0x00000090:          # MUL / MLA
             rd, rn, rs, rm = (ins >> 16) & 15, (ins >> 12) & 15, (ins >> 8) & 15, ins & 15

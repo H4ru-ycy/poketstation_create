@@ -60,11 +60,13 @@ typedef unsigned char  u8;
 #define IOP_START  REG(0x0D800008)
 #define IOP_SOUND  (1u << 5)
 
-/* ---- BIOS (SWI) ---- r0..r2 が引数, r0 が戻り値 ---- */
+/* ---- BIOS (SWI) ---- r0..r2 が引数, r0 が戻り値 ----
+ * BIOS は ARM の呼び出し規約どおり r0-r3, r12 を壊してよいので、すべて clobber に書く
+ * (書かないと、SWI の前後でコンパイラがそれらのレジスタに置いた値が壊れる) */
 static inline u32 swi_set_cpu_speed(u32 speed)
 {
     register u32 r0 __asm__("r0") = speed;
-    __asm__ volatile("swi 0x04" : "+r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x04" : "+r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return r0;
 }
 
@@ -73,7 +75,7 @@ static inline u32 swi_set_callback(u32 index, void (*proc)(void))
 {
     register u32 r0 __asm__("r0") = index;
     register u32 r1 __asm__("r1") = (u32)proc;
-    __asm__ volatile("swi 0x01" : "+r"(r0) : "r"(r1) : "memory", "lr");
+    __asm__ volatile("swi 0x01" : "+r"(r0), "+r"(r1) : : "memory", "lr", "r2", "r3", "r12");
     return r0;
 }
 
@@ -81,7 +83,7 @@ static inline u32 swi_set_callback(u32 index, void (*proc)(void))
 static inline volatile u32 *swi_get_alarm_setting(void)
 {
     register u32 r0 __asm__("r0");
-    __asm__ volatile("swi 0x13" : "=r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x13" : "=r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return (volatile u32 *)r0;
 }
 
@@ -89,7 +91,7 @@ static inline volatile u32 *swi_get_alarm_setting(void)
 static inline u32 swi_get_bcd_date(void)
 {
     register u32 r0 __asm__("r0");
-    __asm__ volatile("swi 0x0D" : "=r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x0D" : "=r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return r0;
 }
 
@@ -97,7 +99,7 @@ static inline u32 swi_get_bcd_date(void)
 static inline u32 swi_get_bcd_time(void)
 {
     register u32 r0 __asm__("r0");
-    __asm__ volatile("swi 0x0E" : "=r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x0E" : "=r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return r0;
 }
 
@@ -114,21 +116,21 @@ static inline u32 swi_prepare_execute(u32 flag, u32 dir_index, u32 param)
     register u32 r0 __asm__("r0") = flag;
     register u32 r1 __asm__("r1") = dir_index;
     register u32 r2 __asm__("r2") = param;
-    __asm__ volatile("swi 0x08" : "+r"(r0) : "r"(r1), "r"(r2) : "memory", "lr");
+    __asm__ volatile("swi 0x08" : "+r"(r0), "+r"(r1), "+r"(r2) : : "memory", "lr", "r3", "r12");
     return r0;
 }
 
 static inline u32 swi_do_execute(u32 flag)
 {
     register u32 r0 __asm__("r0") = flag;
-    __asm__ volatile("swi 0x09" : "+r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x09" : "+r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return r0;
 }
 
 static inline u32 swi_get_dir_index(void)
 {
     register u32 r0 __asm__("r0");
-    __asm__ volatile("swi 0x16" : "=r"(r0) : : "memory", "lr");
+    __asm__ volatile("swi 0x16" : "=r"(r0) : : "memory", "lr", "r1", "r2", "r3", "r12");
     return r0;
 }
 
