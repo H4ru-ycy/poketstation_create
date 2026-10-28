@@ -107,14 +107,13 @@ def script_b(t):
 
 def script_set(t):
     b = 0
-    if t in (20, 26): b |= U                         # 2回押し → 時計 (コマンドの途中かもしれないので少し待つ)
-    if 50 <= t < 90: b |= F                         # 時計の表示中に決定を長押し → 時刻合わせ
-    if t == 100: b |= U                              # 年 +1
-    if t in (110, 125, 180): b |= R                  # 月 → 日 → 時
-    if t == 115: b |= D                              # 月 -1
-    if 130 <= t < 170: b |= U                       # 日を押し続けて連続で +
-    if t == 185: b |= D                              # 時 -1
-    if t == 195: b |= F                              # 決定 → 合わせる
+    if 30 <= t < 155: b |= D                        # 下を4秒押し続ける → 時刻合わせ (3秒でも終了しない)
+    if t == 160: b |= U                              # 西暦 +1
+    if t in (170, 185, 240): b |= R                  # 右: 月 → 日 → 時
+    if t == 175: b |= D                              # 月 -1
+    if 190 <= t < 230: b |= U                       # 日を押し続けて連続で +
+    if t == 245: b |= D                              # 時 -1
+    if t == 255: b |= L                              # 左: 保存して待機へ
     if t >= 330: b |= L
     return b
 
@@ -187,10 +186,10 @@ def scenario_set(player_path):
     dd = int(f"{day:x}")
     wd = (datetime.date(2027, 9, dd).isoweekday() % 7) + 1
     res.append((st >> 24 == wd, f"[時刻合わせ] 曜日も計算して入れる ({st >> 24}, 正しくは {wd})"))
-    res.append((read_big(dev[stick - 1], 9, [1, 8, 18, 25]) == "1037", "[時刻合わせ] 合わせたあとの時計は新しい時刻"))
-    res.append((dev[100 - 1] != dev[96 - 1] or True, ""))
-    in_set = [t for t in range(85, 195) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
-    res.append((in_set and in_set[0] <= 82 + 3, f"[時刻合わせ] 長押しで SET 画面に入る (tick {in_set[:1]})"))
+    res.append((dev[stick - 1] == frames[0], "[時刻合わせ] 左で保存したら待機 (顔) に戻る"))
+    in_set = [t for t in range(30, 255) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
+    res.append((in_set and in_set[0] == 30 + 119, f"[時刻合わせ] 下を4秒押し続けると SET 画面に入る (tick {in_set[:1]})"))
+    res.append((not any(x[0] == 0x09 and x[2] < 300 for x in bus.swis), "[時刻合わせ] 下を押し続けても (3秒をこえても) 終了しない"))
     return res[:-2] + res[-1:] if False else [r for r in res if r[1]]
 
 
@@ -224,13 +223,13 @@ def scenario_idle_clock(player_path):
 
 def script_user(t):
     b = 0
-    if 30 <= t < 70: b |= F                         # 待機 (時計) で決定を長押し → 時刻合わせ
-    if t == 80: b |= U                               # 年 +1
-    if t == 90: b |= F                               # 決める
+    if 30 <= t < 160: b |= D                        # 待機 (時計) で下を4秒 → 時刻合わせ
+    if t == 170: b |= U                              # 西暦 +1
+    if t == 180: b |= L                              # 左で保存して待機へ
     if 200 <= t < 240: b |= U                       # 上の長押し → 日数
     for k, bb in enumerate([U, U, D, D, L, R]):
-        if t == 300 + k * 6: b |= bb
-    if t >= 420: b |= L
+        if t == 400 + k * 6: b |= bb
+    if t >= 520: b |= L
     return b
 
 
@@ -239,11 +238,12 @@ def scenario_user(player_path):
     conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None)
     dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_user, DATE, TIME0)
     res = [(same, f"[待機=時計・上で日数] プレビューと実機の画面が {note}")]
-    set_ticks = [t for t in range(30, 100) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
-    res.append((set_ticks and set_ticks[0] == 30 + 30, f"[待機=時計・上で日数] 決定の長押しで時刻合わせ (tick {set_ticks[:1]})"))
+    set_ticks = [t for t in range(30, 180) if read_letters(dev[t - 1], 22, [21, 25, 29]) == "SET"]
+    res.append((set_ticks and set_ticks[0] == 30 + 119, f"[待機=時計・上で日数] 下の4秒長押しで時刻合わせ (tick {set_ticks[:1]})"))
+    res.append((read_big(dev[185 - 1], 9, [1, 8, 18, 25]) == "1137", "[待機=時計・上で日数] 左で保存すると待機 (日付と時計) に戻る"))
     res.append((read_big(dev[200 + 29 - 1], 12, [6, 13, 20]) == "266", "[待機=時計・上で日数] 上の長押しで日数 (266)"))
-    sing = [t for t in range(300, 400) if dev[t - 1] == frames[7]]
-    res.append((sing and sing[0] == 330, f"[待機=時計・上で日数] コマンドで曲と画像 (tick {sing[:1]})"))
+    sing = [t for t in range(400, 520) if dev[t - 1] == frames[7]]
+    res.append((sing and sing[0] == 430, f"[待機=時計・上で日数] コマンドで曲と画像 (tick {sing[:1]})"))
     return res
 
 

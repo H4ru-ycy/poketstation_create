@@ -14,7 +14,7 @@ const PCHR = {
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
   DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32,
   SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
-  IDLE_CLOCK: 40, IDLE_OFF: 41, WORDS: 44,
+  IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, WORDS: 44,
 };
 const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
@@ -146,10 +146,12 @@ function CharaEngine(cfg, frames, song) {
   let prev = 0, hold = 0, longT = 0, longDone = 0, pending = 0;
   let singing = 0, singAt = 0;
   let animIdx = 0, animWait = 0, animK = 0, singT0 = 0;
-  let clockFire = 0, setWait = 0, setIdle = 0, rep = 0;
+  let setWait = 0, setIdle = 0, rep = 0;
   const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
   const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
-  let idleT = 0, asleep = 0, fireT = 0, fireBlock = 0;
+  let idleT = 0, asleep = 0, setT = 0;
+  const setBtn = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_BTN] ? cfg[PCHR.SET_BTN] : 8;
+  const setHold = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_HOLD] ? cfg[PCHR.SET_HOLD] : 120;
   const histB = [], histT = [];
   const histPush = (b, t) => { if (histB.length === 8) { histB.shift(); histT.shift(); } histB.push(b); histT.push(t); };
   const histClear = () => { histB.length = 0; histT.length = 0; };
@@ -177,11 +179,11 @@ function CharaEngine(cfg, frames, song) {
     let down = btn & ~prev;
     hold = (btn && btn === prev) ? hold + 1 : (btn ? 1 : 0);
     prev = btn;
-    if (mode === SET) hold = 0;
+    if (mode === SET || btn === setBtn) hold = 0;
     if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
     if (mode !== IDLE) { idleT = 0; asleep = 0; }
     else if (asleep) {
-      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); fireBlock = 1; }
+      if (down & 1) { asleep = 0; idleT = 0; longDone = 1; histClear(); }
       down = 0;
     } else if (btn) idleT = 0;
     else if (idleOff && ++idleT >= idleOff) { asleep = 1; face = cfg[PCHR.IDLE]; faceT = 0; pending = 0; histClear(); }
@@ -197,32 +199,24 @@ function CharaEngine(cfg, frames, song) {
       if (++setIdle >= 30 * 30) mode = IDLE;
       if (down & 16) setStep(1);
       if (down & 8) setStep(-1);
-      if (down & 4) edF = edF ? edF - 1 : 4;
       if (down & 2) edF = edF === 4 ? 0 : edF + 1;
       if (btn & 24) { if (++rep >= 12 && ((rep - 12) & 3) === 3) setStep((btn & 16) ? 1 : -1); } else rep = 0;
-      if (down & 1) {
+      if (down & 4) {
         event = "settime"; settime = { date: setDate(), time: setTime(), ed: ed.slice() };
-        mode = idleClock ? IDLE : CLOCK; modeT = cfg[PCHR.SHOW]; clockFire = 0; longDone = 1; idleT = 0; fireBlock = 1;
+        mode = IDLE; longDone = 1; idleT = 0; histClear(); pending = 0;
       }
       down = 0;
     }
-    if (!(btn & 1)) { fireT = 0; fireBlock = 0; }
-    else if (mode === IDLE && idleClock && !asleep && !fireBlock && cfg[PCHR.LONG_BTN] !== 1) {
-      if (++fireT > cfg[PCHR.LONG]) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; hold = 0; fireT = 0; pending = 0; histClear(); down = 0; }
-    }
-    if (mode === CLOCK && clockFire) {
-      if (btn & 1) {
-        if (++clockFire > cfg[PCHR.LONG]) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; clockFire = 0; hold = 0; }
-      } else { clockFire = 0; mode = IDLE; longDone = 1; histClear(); }
-    }
+    if (btn === setBtn && mode === IDLE && !asleep) {
+      if (++setT >= setHold) { mode = SET; setLoad(rtc); setWait = 1; setIdle = 0; rep = 0; hold = 0; setT = 0; pending = 0; histClear(); down = 0; }
+    } else setT = 0;
     for (let b = 1; b <= 16; b <<= 1) {
       if (!(down & b)) continue;
       if (mode === SING) {
         if (b === 1) { if (singing) event = "stop"; singing = 0; mode = IDLE; face = cfg[PCHR.IDLE]; }
         continue;
       }
-      if (mode === CLOCK && b === 1) { clockFire = 1; continue; }
-      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); clockFire = 0; continue; }
+      if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
       histPush(b, now);
       if (cmdLen && histMatches(cmdLen)) {
         histClear(); pending = 0;
@@ -244,7 +238,7 @@ function CharaEngine(cfg, frames, song) {
 
     if (mode === CLOCK || mode === DAYS) {
       if (mode === CLOCK) drawClock(rtc); else drawDays(rtc);
-      if (!clockFire && --modeT === 0) mode = IDLE;
+      if (--modeT === 0) mode = IDLE;
     } else if (mode === SET) {
       drawSet();
     } else if (mode === SING) {

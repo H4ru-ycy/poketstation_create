@@ -5,7 +5,8 @@
  *   2回押し   : 決めたボタンを素早く2回押すと、日付と時計を表示
  *   長押し    : 決めたボタンを長押しすると、基準日 (公開日など) からの日数を表示
  *   コマンド  : 決めた順にボタンを押すと、曲を最後まで1回鳴らして待機に戻る
- *   時計の表示中に決定を長押し : 日付と時刻を合わせる (上下で変える、左右で項目、決定で決める)
+ *   決めたボタン (初期値: 下) を4秒長押し : 日付と時刻を合わせる
+ *       上下で数字を変える、右で次の項目 (西暦・月・日・時・分。選んだ項目が点滅)、左で保存して待機に戻る
  *   3秒押し続ける (どのボタンでも) : 時計画面 (GUI) に戻る
  *
  * 設定は変換ツールが書き出す PCHR ブロック (32bitワードの並び。tools/mkpoc.py を参照)。
@@ -46,6 +47,8 @@ enum {
     /* ここから version 3 */
     C_IDLE_CLOCK = 40,       /* 1 = 待機は日付と時計 (顔の代わりに) */
     C_IDLE_OFF,              /* 待機の表示を消すまで (tick, 0 = 消さない)。消えたら決定で戻る */
+    C_SET_BTN,               /* 時刻合わせに入るボタン (0 = 下) */
+    C_SET_HOLD,              /* そのボタンを押し続ける時間 (tick, 0 = 4秒) */
     C_WORDS = 44
 };
 #define PCHR_MAGIC 0x52484350u   /* "PCHR" */
@@ -305,10 +308,11 @@ int chara_main(const u32 *c)
     u32 prev = 0, hold = 0, long_t = 0, long_done = 0;
     u32 pending = 0, singing_sound = 0;
     u32 anim_idx = 0, anim_wait = 0, anim_k = 0, sing_t0 = 0;
-    u32 clock_fire = 0, set_wait = 0, set_idle = 0, rep = 0;
+    u32 set_wait = 0, set_idle = 0, rep = 0;
     u32 idle_clock = cfg[C_VERSION] >= 3 && cfg[C_IDLE_CLOCK];
     u32 idle_off = cfg[C_VERSION] >= 3 ? cfg[C_IDLE_OFF] : 0, idle_t = 0, asleep = 0;
-    u32 fire_t = 0, fire_block = 0;   /* 待機が時計のとき: 決定の長押しで時刻合わせ */
+    u32 set_btn = cfg[C_VERSION] >= 3 && cfg[C_SET_BTN] ? cfg[C_SET_BTN] : BTN_DOWN;
+    u32 set_hold = cfg[C_VERSION] >= 3 && cfg[C_SET_HOLD] ? cfg[C_SET_HOLD] : TICK_HZ * 4, set_t = 0;
 
     for (;;) {
         wait_tick();
@@ -321,7 +325,7 @@ int chara_main(const u32 *c)
         /* どのボタンでも押し続けると終了 */
         hold = (btn && btn == prev) ? hold + 1 : (btn ? 1 : 0);
         prev = btn;
-        if (mode == M_SET) hold = 0;                  /* 時刻合わせの間は終了しない */
+        if (mode == M_SET || btn == set_btn) hold = 0;   /* 時刻合わせの間と、時刻合わせのボタンの長押しでは終了しない */
         if (hold >= cfg[C_EXIT]) {
             if (singing_sound) snd_stop();
             LCD_MODE = 0;
@@ -331,7 +335,7 @@ int chara_main(const u32 *c)
         /* 待機の表示が消えているとき: 決定で戻る。ほかのボタンは何もしない */
         if (mode != M_IDLE) { idle_t = 0; asleep = 0; }
         else if (asleep) {
-            if (down & BTN_FIRE) { asleep = 0; idle_t = 0; long_done = 1; hist_n = 0; fire_block = 1; }
+            if (down & BTN_FIRE) { asleep = 0; idle_t = 0; long_done = 1; hist_n = 0; }
             down = 0;
         } else if (btn) idle_t = 0;
         else if (idle_off && ++idle_t >= idle_off) { asleep = 1; face = cfg[C_IDLE]; face_t = 0; pending = 0; hist_n = 0; }
@@ -346,37 +350,28 @@ int chara_main(const u32 *c)
 
         /* 時刻合わせ */
         if (mode == M_SET) {
-            if (set_wait) { if (!btn) set_wait = 0; down = 0; }   /* 入ったときの決定を離すまで待つ */
+            if (set_wait) { if (!btn) set_wait = 0; down = 0; }   /* 入ったときのボタンを離すまで待つ */
             if (down) set_idle = 0;
-            if (++set_idle >= TICK_HZ * 30) mode = M_IDLE;    /* 30秒さわらなければやめる */
+            if (++set_idle >= TICK_HZ * 30) mode = M_IDLE;    /* 30秒さわらなければ保存せずにやめる */
             if (down & BTN_UP) set_step(1);
             if (down & BTN_DOWN) set_step(-1);
-            if (down & BTN_LEFT) ed_f = ed_f ? ed_f - 1 : 4;
-            if (down & BTN_RIGHT) ed_f = ed_f == 4 ? 0 : ed_f + 1;
+            if (down & BTN_RIGHT) ed_f = ed_f == 4 ? 0 : ed_f + 1;   /* 次の項目 */
             if (btn & (BTN_UP | BTN_DOWN)) {                  /* 押し続けると連続で変わる */
                 if (++rep >= 12 && ((rep - 12) & 3) == 3) set_step((btn & BTN_UP) ? 1 : -1);
             } else rep = 0;
-            if (down & BTN_FIRE) {
+            if (down & BTN_LEFT) {                            /* 左: 保存して待機に戻る */
                 swi_set_bcd_datetime(set_date(), set_time());
-                mode = idle_clock ? M_IDLE : M_CLOCK;     /* 待機が時計なら、そのまま待機へ */
-                mode_t = cfg[C_SHOW]; clock_fire = 0; long_done = 1; idle_t = 0; fire_block = 1;
+                mode = M_IDLE; long_done = 1; idle_t = 0; hist_n = 0; pending = 0;
             }
             down = 0;
         }
-        /* 待機が日付と時計のとき: 決定を長押し → 時刻合わせ (長押しの日数が決定ボタンでなければ) */
-        if (!(btn & BTN_FIRE)) { fire_t = 0; fire_block = 0; }
-        else if (mode == M_IDLE && idle_clock && !asleep && !fire_block && cfg[C_LONG_BTN] != BTN_FIRE) {
-            if (++fire_t > cfg[C_LONG]) {
-                mode = M_SET; set_load(); set_wait = 1; set_idle = 0; rep = 0; hold = 0; fire_t = 0; pending = 0; hist_n = 0;
+        /* 時刻合わせのボタン (初期値: 下) を押し続ける → 時刻合わせ */
+        if (btn == set_btn && mode == M_IDLE && !asleep) {
+            if (++set_t >= set_hold) {
+                mode = M_SET; set_load(); set_wait = 1; set_idle = 0; rep = 0; hold = 0; set_t = 0; pending = 0; hist_n = 0;
                 down = 0;
             }
-        }
-        /* 時計の表示中に決定を長押し → 時刻合わせ */
-        if (mode == M_CLOCK && clock_fire) {
-            if (btn & BTN_FIRE) {
-                if (++clock_fire > cfg[C_LONG]) { mode = M_SET; set_load(); set_wait = 1; set_idle = 0; rep = 0; clock_fire = 0; hold = 0; }
-            } else { clock_fire = 0; mode = M_IDLE; long_done = 1; hist_n = 0; }   /* 短く押した → 待機へ */
-        }
+        } else set_t = 0;
 
         for (u32 b = 1; b <= BTN_UP; b <<= 1) {
             if (!(down & b)) continue;
@@ -387,9 +382,8 @@ int chara_main(const u32 *c)
                 }
                 continue;
             }
-            if (mode == M_CLOCK && b == BTN_FIRE) { clock_fire = 1; continue; }   /* 長押しか見る */
             if (mode == M_CLOCK || mode == M_DAYS) {   /* どれか押すと待機に戻る */
-                mode = M_IDLE; long_done = 1; hist_n = 0; clock_fire = 0;
+                mode = M_IDLE; long_done = 1; hist_n = 0;
                 continue;
             }
             hist_push(b, now);
@@ -427,7 +421,7 @@ int chara_main(const u32 *c)
         case M_CLOCK:
         case M_DAYS:
             if (mode == M_CLOCK) draw_clock(); else draw_days();
-            if (!clock_fire && --mode_t == 0) mode = M_IDLE;
+            if (--mode_t == 0) mode = M_IDLE;
             break;
         case M_SET:
             draw_set(now);

@@ -190,6 +190,8 @@ def build_pchr(c):
     # version 3: 待機を日付と時計にする・一定時間で表示を消す
     w[40] = 1 if c.get("idleShow") == "clock" else 0
     w[41] = 0 if not c.get("idleOff") else tick(c.get("idleOff"))
+    w[42] = BUTTONS.get(c.get("setBtn") or "down", 8)          # 時刻合わせに入るボタン
+    w[43] = tick(c.get("setHold", 4))                         # 押し続ける時間
     return struct.pack(f"<{PCHR_WORDS}I", *w)
 
 
