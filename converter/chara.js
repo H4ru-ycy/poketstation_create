@@ -12,7 +12,7 @@
 const PCHR = {
   MAGIC: 0, VERSION: 1, IDLE: 2, BLINK: 3, FACE: 4, FACE_HOLD: 9, CLOCK_BG: 10, DAYS_BG: 11,
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
-  DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32,
+  DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32, VOL_BTN: 33,
   SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
   IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, WORDS: 44,
 };
@@ -20,7 +20,8 @@ const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
 const SAMPLES_PER_TICK = 260;   /* 7808Hz ÷ 30Hz (タイマ0 の 260 カウント) */
 
-function CharaEngine(cfg, frames, song) {
+const CHARA_VOL_GAIN = [0, 4, 16, 24, 32, 48];   /* 音量: 切, 1-5 (sound.S は ×gain/16) */
+function CharaEngine(cfg, frames, song, alarmVol = 0) {
   const count = frames.length;
   const fb = new Uint32Array(32);
   const S = { A: 10, D: 11, E: 12, F: 13, H: 14, I: 15, M: 16, N: 17, O: 18, R: 19, S: 20, T: 21, U: 22, W: 23, SLASH: 24, COLON: 25, MINUS: 26 };
@@ -118,6 +119,20 @@ function CharaEngine(cfg, frames, song) {
     clearRect(20, 21, 12, 7);
     putSmall(21, 22, S.S); putSmall(25, 22, S.E); putSmall(29, 22, S.T);
   }
+  const SPEAKER = [0x20, 0x30, 0x38, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x38, 0x30, 0x20];
+  function drawVolume(level) {
+    fb.fill(0);
+    const or = (y, v) => { fb[y] = (fb[y] | v) >>> 0; };
+    SPEAKER.forEach((v, y) => or(9 + y, v << 1));
+    if (level) { or(13, 1 << 8); or(18, 1 << 8); for (let y = 14; y <= 17; y++) or(y, 1 << 9); }
+    else for (let k = 0; k < 5; k++) or(13 + k, (1 << (8 + k)) | (1 << (12 - k)));
+    for (let i = 0; i < 5; i++) {
+      const x = 12 + i * 4, h = 4 + i * 3, top = 22 - h + 1;
+      for (let y = top; y <= 22; y++) or(y, (i < level || y === top || y === 22 ? 7 : 5) << x);
+    }
+    if (level === 0) { putSmall(10, 25, S.O); putSmall(14, 25, S.F); putSmall(18, 25, S.F); }
+    else { putSmall(10, 25, level); putSmall(14, 25, S.SLASH); putSmall(18, 25, 5); }
+  }
   function drawDays(rtc) {
     const date = rtc.date >>> 0;
     const y = bcd((date >>> 24) & 0xFF) * 100 + bcd((date >>> 16) & 0xFF), m = bcd((date >>> 8) & 0xFF), d = bcd(date & 0xFF);
@@ -150,6 +165,7 @@ function CharaEngine(cfg, frames, song) {
   const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
   const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
   let idleT = 0, asleep = 0, setT = 0;
+  let volLevel = alarmVol === 2 ? 0 : alarmVol === 1 ? 1 : 2, volShow = 0;
   const setBtn = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_BTN] ? cfg[PCHR.SET_BTN] : 8;
   const setHold = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_HOLD] ? cfg[PCHR.SET_HOLD] : 120;
   const histB = [], histT = [];
@@ -225,6 +241,11 @@ function CharaEngine(cfg, frames, song) {
         if (song) { singing = 1; singAt = now; event = "sing"; }
         continue;
       }
+      if (b === cfg[PCHR.VOL_BTN] && mode === IDLE) {
+        volLevel = volLevel + 1 >= 6 ? 0 : volLevel + 1;
+        volShow = 45;
+        event = "volume";
+      }
       const f = cfg[PCHR.FACE + [1, 2, 4, 8, 16].indexOf(b)];
       if (f < count) { face = f; faceT = cfg[PCHR.FACE_HOLD]; }
       const n = histB.length;
@@ -269,14 +290,17 @@ function CharaEngine(cfg, frames, song) {
     } else {
       if (faceT && --faceT === 0) face = cfg[PCHR.IDLE];
       if (asleep) { fb.fill(0); return { fb, exit: false, event, settime, mode: "sleep" }; }
-      if (idleClock && !faceT) { drawClock(rtc); return { fb, exit: false, event, settime, mode: "idle" }; }
+      if (idleClock && !faceT) {
+        if (volShow) { volShow--; drawVolume(volLevel); } else drawClock(rtc);
+        return { fb, exit: false, event, settime, mode: "idle", volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] };
+      }
       if (face === cfg[PCHR.IDLE] && cfg[PCHR.BLINK] < count) {
         if (blinkOn) { if (--blinkOn === 0) blinkT = 0; }
         else if (++blinkT >= blinkNext) { blinkOn = 4; blinkNext = blinkNext === 100 ? 160 : 100; }
       } else { blinkOn = 0; blinkT = 0; }
       fbFrame(blinkOn ? cfg[PCHR.BLINK] : face);
     }
-    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set"][mode] };
+    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set"][mode], volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] };
   }
   return { tick };
 }
@@ -290,4 +314,4 @@ function rtcFromDate(dt) {
     time: (((dt.getDay() + 1) << 24) | (b(dt.getHours()) << 16) | (b(dt.getMinutes()) << 8) | b(dt.getSeconds())) >>> 0,
   };
 }
-if (typeof module !== "undefined") module.exports = { CharaEngine, rtcFromDate, PCHR, CHARA_NONE, CHARA_BTN };
+if (typeof module !== "undefined") module.exports = { CHARA_VOL_GAIN, CharaEngine, rtcFromDate, PCHR, CHARA_NONE, CHARA_BTN };

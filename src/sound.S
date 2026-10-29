@@ -15,7 +15,7 @@
     .equ DAC_DATA,   0x0D800014
 
     .equ S_ON,      0x00
-    .equ S_SHIFT,   0x04
+    .equ S_GAIN,    0x04
     .equ S_PTR,     0x08
     .equ S_LEFT,    0x0C
     .equ S_GATE,    0x10
@@ -73,8 +73,14 @@ snd_fiq:
     addhi   r11, r11, r10
     subls   r11, r11, r10
     .endr
-    ldr     r0, [r12, #S_SHIFT]
-    mov     r11, r11, asr r0
+    ldr     r0, [r12, #S_GAIN]          /* 音量: ×gain/16 */
+    mul     r11, r0, r11
+    mov     r11, r11, asr #4
+    cmp     r11, #0x1FC                 /* ±508 で頭打ち (10bit に収める) */
+    movgt   r11, #0x1FC
+    cmn     r11, #0x1FC
+    movlt   r11, #0
+    sublt   r11, r11, #0x1FC
     mov     r11, r11, lsl #6            /* DAC は bit6-15 */
     ldr     r12, =DAC_DATA
     str     r11, [r12]

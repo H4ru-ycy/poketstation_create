@@ -58,7 +58,7 @@ def compile_song(bpm, steps, tracks):
     return out
 
 
-def render(pmu, n, shift=0, loop=True):
+def render(pmu, n, shift=0, loop=True, gain=None):
     """sound.S の snd_fiq と同じ手順で n サンプル作る (DAC に書く値 = 返り値 << 6)
     loop=False: 1回だけ鳴らす (曲のあとには 0 のステップが1つ続いているものとする)"""
     steps, steplen, gatelen = struct.unpack_from("<III", pmu, 8)
@@ -93,7 +93,9 @@ def render(pmu, n, shift=0, loop=True):
             duty = w & 0x00FF0000
             amp = w >> 24
             acc += amp if duty > (phase[i] >> 8) else -amp
-        out.append(acc >> shift)
+        g = (16 >> shift) if gain is None else gain     # sound.S: ×gain/16 で ±508 に収める
+        v = (acc * g) >> 4
+        out.append(max(-508, min(508, v)))
     return out
 
 

@@ -247,7 +247,36 @@ def scenario_user(player_path):
     return res
 
 
-def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000):
+def script_vol(t):
+    b = 0
+    if t in (20, 40): b |= R                         # 右: 音量 2 → 3 → 4
+    for k, bb in enumerate([U, U, D, D, L, R]):      # コマンドの最後の右では音量は変えない
+        if t == 100 + k * 6: b |= bb
+    if t >= 300: b |= L
+    return b
+
+
+def scenario_volume(player_path):
+    """待機 (時計) で右を押すたびに音量を変える。ピッと鳴り、画面の下に出る。曲はその音量で鳴る"""
+    song = make_song()
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
+    dev, same, note, bus, frames, dac = run_variant(player_path, conf, song, script_vol, DATE, TIME0, with_dac=True)
+    res = [(same, f"[音量] プレビューと実機の画面が {note}")]
+    vol_scr = read_small(dev[21 - 1], 25, [10, 18])
+    res.append((vol_scr == "35" and read_big(dev[21 - 1], 9, [1, 8, 18, 25]) != "1137", f"[音量] 右を押すと音量の画面に切りかわる (「3/5」 読み取り {vol_scr})"))
+    res.append((read_big(dev[20 + 45 + 1 - 1], 9, [1, 8, 18, 25]) == "1137" and read_big(dev[20 + 44 - 1], 9, [1, 8, 18, 25]) != "1137" or read_big(dev[40 + 46 - 1], 9, [1, 8, 18, 25]) == "1137",
+                "[音量] 1.5秒たつと日付と時計に戻る"))
+    beep = [signed10(v) for t in range(21, 26) for v in dac.get(t, [])]
+    res.append((beep and max(abs(v) for v in beep) == 90 * 24 // 16, f"[音量] ピッと鳴る (音量3: 最大 {max(abs(v) for v in beep) if beep else 0})"))
+    steplen = struct.unpack_from("<I", song, 12)[0]
+    sing_from = 130
+    pcm = [signed10(v) for t in range(sing_from + 1, sing_from + 40) for v in dac.get(t, [])]
+    ref = render(song, len(pcm), loop=False, gain=32)
+    res.append((pcm[:8 * steplen] == ref[:8 * steplen] and pcm, f"[音量] 曲は音量4 (×2) で鳴る ({len(pcm)} サンプルを比べた)"))
+    return [r for r in res if r[1]]
+
+
+def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000, with_dac=False):
     """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
     frames = make_frames()
     data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", song, conf)
@@ -269,6 +298,7 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
             swi_base(cpu, n)
     bus.swi = swi
     last_t = 0
+    dac = {}
     try:
         while cpu.steps < 30_000_000:
             cpu.step()
@@ -276,7 +306,7 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
             if t != last_t:
                 last_t = t
                 if bus.fiq_cb and _fiq_enabled(bus):
-                    run_fiq(cpu, bus, 260)
+                    dac[t] = run_fiq(cpu, bus, 260)[0]
         raise SystemExit("終了しませんでした")
     except Halt as e:
         if str(e) != "exit":
@@ -292,6 +322,8 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
     mism = [k + 1 for k in range(min(len(dev), len(js_fb))) if dev[k] != js_fb[k]]
     same = not mism and len(dev) == len(js_fb)
     note = f"{len(dev)} tick すべて一致" if same else f"違う tick {mism[:8]} 長さ {len(dev)}/{len(js_fb)}"
+    if with_dac:
+        return dev, same, note, bus, frames, dac
     return dev, same, note, bus, frames
 
 
@@ -440,7 +472,7 @@ def main(player_path, volume=0):
     # ---- 変換ツールのプレビュー (chara.js) と照合
     n = dev_t[-1] + 2
     steplen = struct.unpack_from("<I", song, 12)[0]
-    inp = {"cfg": cfg, "frames": frames, "song": {"count": 8, "steplen": steplen},
+    inp = {"cfg": cfg, "frames": frames, "song": {"count": 8, "steplen": steplen}, "alarm": volume,
            "buttons": [script(t) for t in range(n + 200)],
            "rtc": [{"date": DATE, "time": rtc(t)[1]} for t in range(n + 200)]}
     js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
@@ -487,7 +519,7 @@ def main(player_path, volume=0):
     ref = render(song, len(pcm), 2 if volume == 1 else 0, loop=False)
     got = [signed10(v) for v in pcm]
     if volume == 2:
-        check(any(got), "消音設定でも曲は進む (DAC には書くが音は出さない)")
+        check(not any(got), "消音設定では音量「切」から始まり、曲は音を出さずに進む")
         dacc = [v for a, v in bus.io_log if a == 0x0D800010]
         check(dacc and dacc[-1] == 0, "消音設定では DAC を切ったまま")
     else:
@@ -516,7 +548,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 

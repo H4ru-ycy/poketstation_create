@@ -5,7 +5,7 @@ const load = (f) => fs.readFileSync(path.join(__dirname, "..", "converter", f), 
 eval(load("font.js").replace(/^const /gm, "global."));
 const { CharaEngine } = require("../converter/chara.js");
 const inp = JSON.parse(fs.readFileSync(0, "utf8"));
-const eng = CharaEngine(inp.cfg, inp.frames.map((f) => Uint32Array.from(f)), inp.song);
+const eng = CharaEngine(inp.cfg, inp.frames.map((f) => Uint32Array.from(f)), inp.song, inp.alarm || 0);
 const out = [];
 for (let t = 1; t < inp.buttons.length; t++) {
   const r = eng.tick(inp.buttons[t], inp.rtc[t]);

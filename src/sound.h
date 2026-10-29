@@ -24,7 +24,7 @@
 /* sound.S と同じ並び。順番を変えたら sound.S のオフセットも直すこと */
 struct snd_state {
     u32 on;         /* 00 1=鳴らす */
-    u32 shift;      /* 04 音量を右シフトで下げる (時計画面の音量設定) */
+    u32 gain;       /* 04 音量の倍率 (16 = 1倍)。合計は ±508 で頭打ち */
     u32 ptr;        /* 08 次に読むステップ */
     u32 left;       /* 0C 今のステップの残りサンプル数 */
     u32 gate;       /* 10 音を切るまでの残りサンプル数 (0=済) */
@@ -40,7 +40,8 @@ struct snd_state {
 
 extern struct snd_state snd;
 
-/* 曲データ (PMUS) が正しければ準備して 1 (消音設定なら 2)、無ければ 0。loop は 1 になる */
+/* 曲データ (PMUS) が正しければ準備して 1 (消音設定なら 2)、無ければ 0。loop は 1 になる
+ * gain は時計画面の音量設定から決める (普通 16, 小 4) */
 int  snd_init(const u32 *music);
 void snd_start(void);   /* タイマ2・FIQ・DAC を有効にする */
 void snd_stop(void);    /* すべて止める (GUI に戻る前に必ず呼ぶ) */

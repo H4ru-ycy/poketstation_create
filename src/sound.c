@@ -43,7 +43,7 @@ int snd_init(const u32 *music)
 
     /* 時計画面の音量設定に従う: 0=普通, 1=小 (1/4), 2=消音 */
     u32 vol = (swi_get_alarm_setting()[0] >> 18) & 3;
-    snd.shift = (vol == 1) ? 2 : 0;
+    snd.gain = (vol == 1) ? 4 : 16;
     return vol == 2 ? 2 : 1;   /* 2 = 消音設定なので最初は鳴らさない */
 }
 
