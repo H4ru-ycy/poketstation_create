@@ -247,73 +247,108 @@ def scenario_user(player_path):
     return res
 
 
+def hold_r(t, start):
+    return R if start <= t < start + 95 else 0      # 右を3秒ちょっと押し続ける (89 tick 目で音量メニュー)
+
+
 def script_vol(t):
     b = 0
-    if t in (20, 40): b |= R                         # 右: 音量 2 → 3 → 4
-    for k, bb in enumerate([U, U, D, D, L, R]):      # コマンドの最後の右では音量は変えない
-        if t == 100 + k * 6: b |= bb
-    if t >= 300: b |= L
+    if t == 60: b |= R                               # 右を1回押しただけでは何も変わらない
+    b |= hold_r(t, 100)                              # 右を3秒 → 音量メニュー (204 から)
+    if t in (210, 220): b |= U                       # 上: 音量 2 → 3 → 4
+    if t == 230: b |= D                              # 下: 4 → 3
+    if t == 240: b |= U                              # 上: 3 → 4
+    if t == 250: b |= L                              # 左: 保存せずに戻る
+    for k, bb in enumerate([U, U, D, D, L, R]):      # コマンドの最後の右も、ふつうに入る
+        if t == 280 + k * 6: b |= bb
+    if 420 <= t < 560: b |= U                        # 上を3秒以上 → 日数。終了はしない
+    if t >= 600: b |= L
     return b
 
 
 def scenario_volume(player_path):
-    """待機 (時計) で右を押すたびに音量を変える。ピッと鳴り、画面の下に出る。曲はその音量で鳴る"""
+    """待機で右を3秒押し続けると音量メニュー。上下で変え、ピッと鳴る。曲はその音量で鳴る"""
     song = make_song()
-    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", longTime=3, singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
     dev, same, note, bus, frames, dac = run_variant(player_path, conf, song, script_vol, DATE, TIME0, with_dac=True)
     res = [(same, f"[音量] プレビューと実機の画面が {note}")]
-    vol_scr = read_small(dev[21 - 1], 25, [10, 18])
-    res.append((vol_scr == "35" and read_big(dev[21 - 1], 9, [1, 8, 18, 25]) != "1137", f"[音量] 右を押すと音量の画面に切りかわる (「3/5」 読み取り {vol_scr})"))
-    res.append((read_big(dev[20 + 45 + 1 - 1], 9, [1, 8, 18, 25]) == "1137" and read_big(dev[20 + 44 - 1], 9, [1, 8, 18, 25]) != "1137" or read_big(dev[40 + 46 - 1], 9, [1, 8, 18, 25]) == "1137",
-                "[音量] 1.5秒たつと日付と時計に戻る"))
-    beep = [signed10(v) for t in range(21, 26) for v in dac.get(t, [])]
-    res.append((beep and max(abs(v) for v in beep) == 90 * 24 // 16, f"[音量] ピッと鳴る (音量3: 最大 {max(abs(v) for v in beep) if beep else 0})"))
+    clock = lambda t: read_big(dev[t - 1], 9, [1, 8, 18, 25]) == "1137"
+    vol = lambda t: read_small(dev[t - 1], 25, [10, 18])
+    res.append((clock(62) and clock(150), "[音量] 右を押しただけ・押している途中は日付と時計のまま"))
+    res.append((vol(190) == "25" and not clock(190) and clock(187), f"[音量] 右を3秒押し続けると音量メニュー (「2/5」 読み取り {vol(190)})"))
+    res.append((vol(212) == "35" and vol(222) == "45" and vol(232) == "35" and vol(242) == "45", "[音量] 上で大きく・下で小さく"))
+    beep = [signed10(v) for t in range(221, 226) for v in dac.get(t, [])]
+    res.append((beep and max(abs(v) for v in beep) == 90 * 32 // 16, f"[音量] ピッと鳴る (音量4: 最大 {max(abs(v) for v in beep) if beep else 0})"))
+    res.append((clock(252) and not bus.flash_writes, "[音量] 左で保存せずに日付と時計に戻る"))
     steplen = struct.unpack_from("<I", song, 12)[0]
-    sing_from = 130
+    sing_from = 310
     pcm = [signed10(v) for t in range(sing_from + 1, sing_from + 40) for v in dac.get(t, [])]
     ref = render(song, len(pcm), loop=False, gain=32)
-    res.append((pcm[:8 * steplen] == ref[:8 * steplen] and pcm, f"[音量] 曲は音量4 (×2) で鳴る ({len(pcm)} サンプルを比べた)"))
+    res.append((pcm[:8 * steplen] == ref[:8 * steplen] and pcm, f"[音量] コマンドの曲が鳴り、音量4 (×2) で鳴る ({len(pcm)} サンプルを比べた)"))
+    days = read_big(dev[515 - 1], 9, [1, 8, 18, 25]) if False else None
+    res.append((clock(505) and not clock(512) and len(dev) > 580, f"[音量] 上を3秒押し続けると日数 (押し続けても終了しない) {len(dev)}"))
     return [r for r in res if r[1]]
 
 
+TAPS = {100 + k * 6: bb for k, bb in enumerate([U, U, D, D, L, R])}
+
+
+def tap_cmd(t, ph):
+    return TAPS.get(t, 0) if 0.3 <= ph < 0.6 else 0  # コマンドを、tick の途中の 1/100 秒だけ押す
+
+
+def scenario_tap(player_path):
+    """1/30秒の読み取りの合間に押して離した短いタップも、コマンドとして受けつける"""
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
+    exit_l = lambda t: L if t >= 300 else 0
+    js = lambda t: exit_l(t) | TAPS.get(t - 1, 0)
+    dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), exit_l, DATE, TIME0, tap_fn=tap_cmd, js_script=js)
+    sing = [t for t in range(100, 300) if dev[t - 1] == frames[7]]
+    return [(same, f"[短いタップ] プレビューと実機の画面が {note}"),
+            (sing and sing[0] == 131, f"[短いタップ] 短く押したコマンドでも曲が始まる (tick {sing[:1]})")]
+
+
 def script_save(t):
-    b = 0
-    if t in (20, 30): b |= R                         # 音量 2 → 3 → 4
-    if t == 40: b |= F                               # 音量の画面で決定 → 保存
-    if t == 120: b |= R                              # 5 (保存しない)
-    if t >= 200: b |= L
+    b = hold_r(t, 20)                                # 音量メニュー (109 から)
+    if t in (120, 130): b |= U                       # 音量 2 → 3 → 4
+    if t == 140: b |= F                              # 決定 → 保存
+    b |= hold_r(t, 200)                              # もう一度メニュー (289 から)
+    if t == 300: b |= U                              # 5
+    if t == 310: b |= L                              # 保存しないで戻る
+    if t >= 400: b |= L
     return b
 
 
 def script_after(t):
-    b = 0
-    if t == 20: b |= R                               # 保存した 4 から 5 へ
-    if t >= 100: b |= L
+    b = hold_r(t, 20)                                # 音量メニュー: 保存した音量から
+    if t == 120: b |= L
+    if t >= 200: b |= L
     return b
 
 
 def scenario_save(player_path):
-    """音量の画面で決定を押すと、ファイルの中 (PSET) に保存して、次に起動したときもその音量"""
+    """音量メニューで決定を押すと、ファイルの中 (PSET) に保存して、次に起動したときもその音量"""
     conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
     dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_save, DATE, TIME0)
     res = [(same, f"[音量の保存] プレビューと実機の画面が {note}")]
     w = bus.flash_writes
-    res.append((len(w) == 1 and w[0][0] == 40 and not w[0][2], f"[音量の保存] 決定でフラッシュに1回だけ書く (音を止めてから) {w}"))
+    res.append((len(w) == 1 and w[0][0] == 140 and not w[0][2], f"[音量の保存] 決定でフラッシュに1回だけ書く (音を止めてから) {w}"))
     cfg_addr = struct.unpack_from("<8I", bus.flash, 0x180)[6]
     pset = struct.unpack_from("<I", bus.flash, cfg_addr - 0x02000000 + 44 * 4)[0]
     magic, lvl = struct.unpack_from("<II", bus.flash, pset - 0x02000000)
     res.append((magic == 0x54455350 and lvl == 5 and pset % 128 == 0, f"[音量の保存] 保存した中身は「PSET」と音量4 ({magic:08x} {lvl - 1}, {pset:08x})"))
-    res.append((read_small(dev[41 - 1], 25, [10]) == "4" and dev[41 - 1][25] & (0x20 << 24), "[音量の保存] 保存すると ✓ が出る"))
+    res.append((read_small(dev[141 - 1], 25, [10]) == "4" and dev[141 - 1][25] & (0x20 << 24), "[音量の保存] 保存すると ✓ が出る"))
+    res.append((read_big(dev[172 - 1], 9, [1, 8, 18, 25]) == "1137", "[音量の保存] 1秒で日付と時計に戻る"))
     dev2, same2, note2, _, _ = run_variant(player_path, conf, make_song(), script_after, DATE, TIME0, data=bytes(bus.flash), js_saved=4)
     res.append((same2, f"[音量の保存] 2回目の起動: プレビューと実機の画面が {note2}"))
-    res.append((read_small(dev2[21 - 1], 25, [10]) == "5", "[音量の保存] 次に起動したときは保存した音量 4 から始まる (右で 5)"))
+    res.append((read_small(dev2[112 - 1], 25, [10]) == "4", "[音量の保存] 次に起動したときは保存した音量 4"))
     conf3 = dict(conf, startVol=3)
     dev3, same3, note3, _, _ = run_variant(player_path, conf3, make_song(), script_after, DATE, TIME0, js_saved=3)
-    res.append((same3 and read_small(dev3[21 - 1], 25, [10]) == "4", "[音量の保存] 変換ツールで決めた最初の音量 3 から始まる (右で 4)"))
+    res.append((same3 and read_small(dev3[112 - 1], 25, [10]) == "3", "[音量の保存] 変換ツールで決めた最初の音量 3 から始まる"))
     return res
 
 
-def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000, with_dac=False, data=None, js_saved=None):
+def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000, with_dac=False, data=None, js_saved=None, tap_fn=None, js_script=None):
     """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
     frames = make_frames()
     if data is None:
@@ -324,6 +359,11 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
     cpu = ARM(bus)
     bus.cpu = cpu
     bus.buttons = script_fn
+    if tap_fn:                                # 1tick の途中だけ押す (30Hz の読み取りの合間の短いタップ)
+        def phase():
+            r = bus.reload()
+            return ((bus.cpu.steps - bus.t0_start) // test_player.K % (r + 1)) / (r + 1)
+        bus.buttons = lambda t: script_fn(t) | tap_fn(t, phase())
     cpu.r[15] = struct.unpack_from("<I", data, 0x5C)[0]
     swi_base = bus.swi
 
@@ -353,7 +393,7 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
     n = len(dev) + 2
     steplen = struct.unpack_from("<I", song, 12)[0] if song else 0
     inp = {"cfg": cfg, "frames": frames, "song": {"count": struct.unpack_from("<I", song, 8)[0], "steplen": steplen} if song else None,
-           "buttons": [script_fn(t) for t in range(n + 200)], "rtc": [{"date": date, "time": time} for _ in range(n + 200)],
+           "buttons": [(js_script or script_fn)(t) for t in range(n + 200)], "rtc": [{"date": date, "time": time} for _ in range(n + 200)],
            "savedVol": js_saved}
     js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
                                    capture_output=True, text=True, check=True).stdout)
@@ -587,7 +627,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path) + scenario_save(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path) + scenario_save(player_path) + scenario_tap(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 

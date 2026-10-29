@@ -53,11 +53,12 @@ enum {
     C_SET_HOLD,              /* そのボタンを押し続ける時間 (tick, 0 = 4秒) */
     /* ここから version 4 */
     C_SAVE = 44,             /* 設定を残す 128バイト (PSET) のアドレス (0 = 残さない) */
+    C_VOL_HOLD = 45,         /* 音量のボタンを押し続けると音量メニュー (tick, 0 = 3秒) */
     C_WORDS = 48
 };
 #define PCHR_MAGIC 0x52484350u   /* "PCHR" */
 
-enum { M_IDLE, M_CLOCK, M_DAYS, M_SING, M_SET };
+enum { M_IDLE, M_CLOCK, M_DAYS, M_SING, M_SET, M_VOL };
 
 /* 小さい文字の番号 (font.h の SMALL_CHARS の並び) */
 enum { S_A = 10, S_D, S_E, S_F, S_H, S_I, S_M, S_N, S_O, S_R, S_S, S_T, S_U, S_W, S_SLASH, S_COLON, S_MINUS, S_SPACE };
@@ -357,13 +358,15 @@ int chara_main(const u32 *c)
     u32 face = cfg[C_IDLE], face_t = 0;
     u32 blink_t = 0, blink_next = 100, blink_on = 0;
     u32 prev = 0, hold = 0, long_t = 0, long_done = 0;
-    u32 pending = 0, singing_sound = 0, beeping = 0, vol_show = 0;
+    u32 pending = 0, singing_sound = 0, beeping = 0;
     u32 al = (swi_get_alarm_setting()[0] >> 18) & 3;
     u32 vol_level = al == 2 ? 0 : al == 1 ? 1 : 2;      /* 最初は時計画面の音量設定から */
     const u32 *save = (cfg[C_VERSION] >= 4 && cfg[C_SAVE]) ? (const u32 *)cfg[C_SAVE] : 0;
     if (save && save[0] == PSET_MAGIC && save[1] >= 1 && save[1] <= VOL_LEVELS)
         vol_level = save[1] - 1;                       /* 保存した音量 (または変換ツールで決めた最初の音量) */
-    u32 vol_saved = 0;
+    u32 vol_saved = 0, vol_t = 0, vol_wait = 0, vol_idle = 0, vol_done = 0;
+    u32 vol_btn = cfg[C_VOL_BTN];
+    u32 vol_hold = cfg[C_VERSION] >= 4 && cfg[C_VOL_HOLD] ? cfg[C_VOL_HOLD] : TICK_HZ * 3;
     u32 anim_idx = 0, anim_wait = 0, anim_k = 0, sing_t0 = 0;
     u32 set_wait = 0, set_idle = 0, rep = 0;
     u32 idle_clock = cfg[C_VERSION] >= 3 && cfg[C_IDLE_CLOCK];
@@ -376,13 +379,17 @@ int chara_main(const u32 *c)
         now++;
         lcd_update_mode();
 
-        u32 btn = INT_INPUT & BTN_MASK;
+        /* 1/30秒の間に押して離した短いタップも、1tick だけ押したことにする (見のがさない) */
+        u32 raw = INT_INPUT & BTN_MASK;
+        u32 btn = raw | (tap_latch & BTN_MASK & ~prev & ~raw);
+        tap_latch = 0;
         u32 down = btn & ~prev;
 
         /* どのボタンでも押し続けると終了 */
         hold = (btn && btn == prev) ? hold + 1 : (btn ? 1 : 0);
         prev = btn;
-        if (mode == M_SET || btn == set_btn) hold = 0;   /* 時刻合わせの間と、時刻合わせのボタンの長押しでは終了しない */
+        /* 時刻合わせ・音量メニューの間と、長押しに使うボタン (時刻合わせ・日数・音量) では終了しない */
+        if (mode == M_SET || mode == M_VOL || btn == set_btn || btn == cfg[C_LONG_BTN] || btn == vol_btn) hold = 0;
         if (beeping && !snd.on) { snd_stop(); beeping = 0; }   /* ピッが終わった */
         if (hold >= cfg[C_EXIT]) {
             if (singing_sound || beeping) snd_stop();
@@ -423,6 +430,45 @@ int chara_main(const u32 *c)
             }
             down = 0;
         }
+        /* 音量メニュー: 上 (か右) で大きく、下で小さく、決定で保存して戻る、左で保存せずに戻る */
+        if (mode == M_VOL) {
+            if (vol_wait) { if (!btn) vol_wait = 0; down = 0; }   /* 入ったときのボタンを離すまで待つ */
+            if (vol_done) down = 0;                              /* ✓ を見せている */
+            if (down) vol_idle = 0;
+            u32 nl = vol_level;
+            if ((down & (BTN_UP | BTN_RIGHT)) && nl + 1 < VOL_LEVELS) nl++;
+            if ((down & BTN_DOWN) && nl > 0) nl--;
+            if (nl != vol_level) {
+                vol_level = nl; vol_saved = 0;
+                if (beeping) snd_stop();
+                beeping = 0;
+                if (vol_level) { beep_start(vol_gain[vol_level]); beeping = 1; }
+            }
+            if (down & BTN_FIRE) {                               /* 決定: 保存 */
+                if (save) {
+                    if (beeping) { snd_stop(); beeping = 0; }    /* 書いている間はフラッシュを読めないので音を止める */
+                    if (save[0] != PSET_MAGIC || save[1] != vol_level + 1) {
+                        for (u32 k = 0; k < 32; k++) save_buf[k] = 0;
+                        save_buf[0] = PSET_MAGIC; save_buf[1] = vol_level + 1;
+                        swi_flash_write_virtual((cfg[C_SAVE] - 0x02000000u) >> 7, save_buf);
+                    }
+                    vol_saved = 1;
+                }
+                vol_done = TICK_HZ;                              /* ✓ を1秒見せてから戻る */
+            }
+            if ((down & BTN_LEFT) || (!vol_done && ++vol_idle >= TICK_HZ * 10)) vol_done = 1;   /* 左か10秒さわらない: 保存せずに戻る */
+            down = 0;
+        }
+        /* 音量のボタン (初期値: 右) を押し続ける → 音量メニュー */
+        if (vol_btn && btn == vol_btn && mode == M_IDLE && !asleep) {
+            if (++vol_t >= vol_hold) {
+                mode = M_VOL; vol_wait = 1; vol_idle = 0; vol_done = 0; vol_saved = 0; vol_t = 0;
+                pending = 0; hist_n = 0; down = 0; face = cfg[C_IDLE]; face_t = 0;
+                if (beeping) snd_stop();
+                beeping = 0;
+                if (vol_level) { beep_start(vol_gain[vol_level]); beeping = 1; }
+            }
+        } else vol_t = 0;
         /* 時刻合わせのボタン (初期値: 下) を押し続ける → 時刻合わせ */
         if (btn == set_btn && mode == M_IDLE && !asleep) {
             if (++set_t >= set_hold) {
@@ -444,16 +490,6 @@ int chara_main(const u32 *c)
                 mode = M_IDLE; long_done = 1; hist_n = 0;
                 continue;
             }
-            if (b == BTN_FIRE && mode == M_IDLE && vol_show && save) {   /* 音量の画面で決定 → 保存 */
-                if (beeping) { snd_stop(); beeping = 0; }             /* 書いている間はフラッシュを読めないので音を止める */
-                if (save[0] != PSET_MAGIC || save[1] != vol_level + 1) {
-                    for (u32 k = 0; k < 32; k++) save_buf[k] = 0;
-                    save_buf[0] = PSET_MAGIC; save_buf[1] = vol_level + 1;
-                    swi_flash_write_virtual((cfg[C_SAVE] - 0x02000000u) >> 7, save_buf);
-                }
-                vol_show = TICK_HZ * 3 / 2; vol_saved = 1;
-                continue;
-            }
             hist_push(b, now);
             if (cmd_len && hist_matches(cmd_len)) {    /* コマンド → 曲 */
                 hist_n = 0; pending = 0;
@@ -471,13 +507,6 @@ int chara_main(const u32 *c)
                     singing_sound = 1;
                 }
                 continue;
-            }
-            if (b == cfg[C_VOL_BTN] && mode == M_IDLE) {   /* 音量を変える (押すたびに 切→1→…→5→切) */
-                vol_level = vol_level + 1 >= VOL_LEVELS ? 0 : vol_level + 1;
-                vol_show = TICK_HZ * 3 / 2; vol_saved = 0;
-                if (beeping) snd_stop();
-                beeping = 0;
-                if (vol_level) { beep_start(vol_gain[vol_level]); beeping = 1; }
             }
             u32 f = cfg[C_FACE + (b == 1 ? 0 : b == 2 ? 1 : b == 4 ? 2 : b == 8 ? 3 : 4)];
             if (f < count) { face = f; face_t = cfg[C_FACE_HOLD]; }
@@ -502,6 +531,10 @@ int chara_main(const u32 *c)
             break;
         case M_SET:
             draw_set(now);
+            break;
+        case M_VOL:
+            draw_volume(vol_level, vol_saved);
+            if (vol_done && --vol_done == 0) { mode = M_IDLE; long_done = 1; idle_t = 0; hist_n = 0; pending = 0; }
             break;
         case M_SING: {
             u32 first = cfg[C_SING_FIRST], n = cfg[C_SING_COUNT];
@@ -533,8 +566,7 @@ int chara_main(const u32 *c)
             if (face_t && --face_t == 0) face = cfg[C_IDLE];
             if (asleep) { for (u32 y = 0; y < 32; y++) fb[y] = 0; break; }   /* 表示を消している */
             if (idle_clock && !face_t) {                                     /* 待機は日付と時計 */
-                if (vol_show) { vol_show--; draw_volume(vol_level, vol_saved); }   /* 音量を変えた直後は音量の画面 */
-                else draw_clock();
+                draw_clock();
                 break;
             }
             /* まばたき: 待機の顔のときだけ、ときどき */

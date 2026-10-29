@@ -17,6 +17,7 @@ extern const u32 anim_info[8];
 
 void timer_init(void);
 void wait_tick(void);
+extern u32 tap_latch;   /* 1tick の間に一度でも押されたボタン (短いタップとチャタリング対策) */
 void lcd_update_mode(void);
 void lcd_draw(const u32 *frame, u32 invert);
 int  chara_main(const u32 *cfg);

@@ -26,6 +26,7 @@ static const u32 test_pattern_row[2] = { 0x00FF00FFu, 0xFF00FF00u };
 /* ---- 30Hz のタイマ (Timer0 を割り込みなしでポーリング) ----
  * CPU 3.99MHz (速度7) / 512 = 7808Hz → 260 カウントで約 30.03Hz */
 static u32 last_count;
+u32 tap_latch;
 
 void timer_init(void)
 {
@@ -39,6 +40,7 @@ void timer_init(void)
 void wait_tick(void)
 {
     for (;;) {
+        tap_latch |= INT_INPUT;    /* 待っている間もボタンを見ておく */
         u32 c = T0_COUNT & 0xFFFFu;
         if (c > last_count) {      /* 減算カウンタが巻き戻った = 1周期経過 */
             last_count = c;

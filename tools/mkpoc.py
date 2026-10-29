@@ -174,7 +174,7 @@ def build_pchr(c):
     w[26] = 1 if c.get("countFrom", 0) else 0
     w[27] = tick(c.get("show", 5))
     w[28] = tick(c.get("dblWin", 0.4))
-    w[29] = tick(c.get("longTime", 1.0))
+    w[29] = tick(c.get("longTime", 3.0))
     w[30] = tick(c.get("cmdGap", 1.0))
     w[31] = int(c.get("daysY", 12))
     w[32] = tick(c.get("exit", 3))
@@ -190,9 +190,10 @@ def build_pchr(c):
     # version 3: 待機を日付と時計にする・一定時間で表示を消す
     w[40] = 1 if c.get("idleShow") == "clock" else 0
     w[41] = 0 if not c.get("idleOff") else tick(c.get("idleOff"))
-    w[33] = BUTTONS.get(c.get("volBtn") or "", 0)              # 待機中に音量を変えるボタン (0 = 使わない)
+    w[33] = BUTTONS.get(c.get("volBtn") or "", 0)              # 押し続けると音量メニューに入るボタン (0 = 使わない)
     w[42] = BUTTONS.get(c.get("setBtn") or "down", 8)          # 時刻合わせに入るボタン
     w[43] = tick(c.get("setHold", 4))                         # 押し続ける時間
+    w[45] = tick(c.get("volHold", 3))                         # 音量のボタンを押し続けると音量メニュー
     return struct.pack(f"<{PCHR_WORDS}I", *w)
 
 
