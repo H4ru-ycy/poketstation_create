@@ -276,10 +276,48 @@ def scenario_volume(player_path):
     return [r for r in res if r[1]]
 
 
-def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000, with_dac=False):
+def script_save(t):
+    b = 0
+    if t in (20, 30): b |= R                         # 音量 2 → 3 → 4
+    if t == 40: b |= F                               # 音量の画面で決定 → 保存
+    if t == 120: b |= R                              # 5 (保存しない)
+    if t >= 200: b |= L
+    return b
+
+
+def script_after(t):
+    b = 0
+    if t == 20: b |= R                               # 保存した 4 から 5 へ
+    if t >= 100: b |= L
+    return b
+
+
+def scenario_save(player_path):
+    """音量の画面で決定を押すと、ファイルの中 (PSET) に保存して、次に起動したときもその音量"""
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", singMode="image", singA=7, faces=[None] * 5, blink=None, volBtn="right")
+    dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_save, DATE, TIME0)
+    res = [(same, f"[音量の保存] プレビューと実機の画面が {note}")]
+    w = bus.flash_writes
+    res.append((len(w) == 1 and w[0][0] == 40 and not w[0][2], f"[音量の保存] 決定でフラッシュに1回だけ書く (音を止めてから) {w}"))
+    cfg_addr = struct.unpack_from("<8I", bus.flash, 0x180)[6]
+    pset = struct.unpack_from("<I", bus.flash, cfg_addr - 0x02000000 + 44 * 4)[0]
+    magic, lvl = struct.unpack_from("<II", bus.flash, pset - 0x02000000)
+    res.append((magic == 0x54455350 and lvl == 5 and pset % 128 == 0, f"[音量の保存] 保存した中身は「PSET」と音量4 ({magic:08x} {lvl - 1}, {pset:08x})"))
+    res.append((read_small(dev[41 - 1], 25, [10]) == "4" and dev[41 - 1][25] & (0x20 << 24), "[音量の保存] 保存すると ✓ が出る"))
+    dev2, same2, note2, _, _ = run_variant(player_path, conf, make_song(), script_after, DATE, TIME0, data=bytes(bus.flash), js_saved=4)
+    res.append((same2, f"[音量の保存] 2回目の起動: プレビューと実機の画面が {note2}"))
+    res.append((read_small(dev2[21 - 1], 25, [10]) == "5", "[音量の保存] 次に起動したときは保存した音量 4 から始まる (右で 5)"))
+    conf3 = dict(conf, startVol=3)
+    dev3, same3, note3, _, _ = run_variant(player_path, conf3, make_song(), script_after, DATE, TIME0, js_saved=3)
+    res.append((same3 and read_small(dev3[21 - 1], 25, [10]) == "4", "[音量の保存] 変換ツールで決めた最初の音量 3 から始まる (右で 4)"))
+    return res
+
+
+def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000, with_dac=False, data=None, js_saved=None):
     """設定・曲・台本を変えて動かし、(実機の画面の列, プレビューと一致したか, 説明, bus) を返す"""
     frames = make_frames()
-    data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", song, conf)
+    if data is None:
+        data, _ = mkpoc.build_file(open(player_path, "rb").read(), frames, 4, "テスト", song, conf)
     cfg_addr = struct.unpack_from("<8I", data, 0x180)[6]
     cfg = list(struct.unpack_from(f"<{mkpoc.PCHR_WORDS}I", data, cfg_addr - 0x02000000))
     bus = PocBus(data)
@@ -315,7 +353,8 @@ def run_variant(player_path, conf, song, script_fn, date=DATE_B, time=0x07000000
     n = len(dev) + 2
     steplen = struct.unpack_from("<I", song, 12)[0] if song else 0
     inp = {"cfg": cfg, "frames": frames, "song": {"count": struct.unpack_from("<I", song, 8)[0], "steplen": steplen} if song else None,
-           "buttons": [script_fn(t) for t in range(n + 200)], "rtc": [{"date": date, "time": time} for _ in range(n + 200)]}
+           "buttons": [script_fn(t) for t in range(n + 200)], "rtc": [{"date": date, "time": time} for _ in range(n + 200)],
+           "savedVol": js_saved}
     js = json.loads(subprocess.run(["node", os.path.join(HERE, "chara_js.js")], input=json.dumps(inp),
                                    capture_output=True, text=True, check=True).stdout)
     js_fb = [j["fb"] for j in js if not j["exit"]]
@@ -548,7 +587,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path) + scenario_save(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 

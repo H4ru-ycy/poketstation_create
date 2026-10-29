@@ -138,7 +138,7 @@ def color_icon(frame):
 
 BUTTONS = {"fire": 1, "right": 2, "left": 4, "down": 8, "up": 16}
 NONE = 0xFFFFFFFF
-PCHR_WORDS = 44
+PCHR_WORDS = 48
 
 
 def day_number(y, m, d):
@@ -158,7 +158,7 @@ def build_pchr(c):
     y, m, d = (int(x) for x in c.get("baseDate", "2026-01-22").split("-"))
     cmd = [btn(b) for b in c.get("cmd", [])][:8]
     w = [0] * PCHR_WORDS
-    w[0], w[1] = 0x52484350, 3
+    w[0], w[1] = 0x52484350, 4
     w[2], w[3] = fr(c.get("idle", 0)), fr(c.get("blink"))
     faces = (c.get("faces") or [None] * 5) + [None] * 5
     for i in range(5):
@@ -216,6 +216,17 @@ def build_file(player, frames, delay, title, music=b"", chara=None):
         music = bytes(music) + b"\0" * (-len(music) % 4) + b"\0" * 16   # 1回だけ鳴らす曲の終わりの目印 (休符1ステップ)
     chara_bytes = build_pchr(chara) if chara is not None else b""
     chara_addr = frames_addr + len(frame_bytes) + len(music) if chara is not None else 0
+    if chara is not None:
+        # 設定を残す 128バイト (PSET)。ポケステの決定ボタンで音量を書きこむ。128バイト境界に置く
+        end = chara_addr + len(chara_bytes)
+        pad = (-(end - BASE)) % 128
+        pset_addr = end + pad
+        sv = chara.get("startVol")
+        sv = None if sv in (None, "") else sv
+        pset = struct.pack("<II", 0x54455350, int(sv) + 1) + b"\0" * 120 if sv is not None and 0 <= int(sv) <= 5 else b"\0" * 128
+        chara_bytes = bytearray(chara_bytes)
+        struct.pack_into("<I", chara_bytes, 44 * 4, pset_addr)
+        chara_bytes = bytes(chara_bytes) + b"\0" * pad + pset
     struct.pack_into("<IIIII", player, 8, frames_addr, count, delay, music_addr, chara_addr)
     body = bytes(player) + b"\0" * (-len(player) % 4)
 

@@ -103,6 +103,16 @@ static inline u32 swi_get_bcd_time(void)
     return r0;
 }
 
+/* FlashWriteVirtual(sector, src): 実行中のファイル (02000000h〜) の 128バイト (sector 番目) を src の内容で書きかえる。
+ * 0 = 成功。書いている間はフラッシュを読めないので、音 (FIQ) は止めてから呼ぶこと */
+static inline u32 swi_flash_write_virtual(u32 sector, const u32 *src)
+{
+    register u32 r0 __asm__("r0") = sector;
+    register u32 r1 __asm__("r1") = (u32)src;
+    __asm__ volatile("swi 0x03" : "+r"(r0), "+r"(r1) : : "memory", "lr", "r2", "r3", "r12");
+    return r0;
+}
+
 /* SetBcdDateTime: 日付と時刻を合わせる (形式は GetBcdDate / GetBcdTime と同じ) */
 static inline void swi_set_bcd_datetime(u32 date, u32 time)
 {

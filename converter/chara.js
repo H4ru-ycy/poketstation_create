@@ -14,14 +14,15 @@ const PCHR = {
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
   DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32, VOL_BTN: 33,
   SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
-  IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, WORDS: 44,
+  IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, SAVE: 44, WORDS: 48,
 };
 const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
 const SAMPLES_PER_TICK = 260;   /* 7808Hz ÷ 30Hz (タイマ0 の 260 カウント) */
 
 const CHARA_VOL_GAIN = [0, 4, 16, 24, 32, 48];   /* 音量: 切, 1-5 (sound.S は ×gain/16) */
-function CharaEngine(cfg, frames, song, alarmVol = 0) {
+/* savedVol: ファイルに保存してある音量 (PSET。0-5)、無ければ null */
+function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
   const count = frames.length;
   const fb = new Uint32Array(32);
   const S = { A: 10, D: 11, E: 12, F: 13, H: 14, I: 15, M: 16, N: 17, O: 18, R: 19, S: 20, T: 21, U: 22, W: 23, SLASH: 24, COLON: 25, MINUS: 26 };
@@ -120,7 +121,8 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
     putSmall(21, 22, S.S); putSmall(25, 22, S.E); putSmall(29, 22, S.T);
   }
   const SPEAKER = [0x20, 0x30, 0x38, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x38, 0x30, 0x20];
-  function drawVolume(level) {
+  const CHECK = [0x20, 0x10, 0x09, 0x06];
+  function drawVolume(level, saved) {
     fb.fill(0);
     const or = (y, v) => { fb[y] = (fb[y] | v) >>> 0; };
     SPEAKER.forEach((v, y) => or(9 + y, v << 1));
@@ -132,6 +134,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
     }
     if (level === 0) { putSmall(10, 25, S.O); putSmall(14, 25, S.F); putSmall(18, 25, S.F); }
     else { putSmall(10, 25, level); putSmall(14, 25, S.SLASH); putSmall(18, 25, 5); }
+    if (saved) CHECK.forEach((v, y) => or(25 + y, v << 24));
   }
   function drawDays(rtc) {
     const date = rtc.date >>> 0;
@@ -165,7 +168,9 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
   const idleClock = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.IDLE_CLOCK];
   const idleOff = cfg[PCHR.VERSION] >= 3 ? cfg[PCHR.IDLE_OFF] : 0;
   let idleT = 0, asleep = 0, setT = 0;
-  let volLevel = alarmVol === 2 ? 0 : alarmVol === 1 ? 1 : 2, volShow = 0;
+  let volLevel = alarmVol === 2 ? 0 : alarmVol === 1 ? 1 : 2, volShow = 0, volSaved = 0;
+  const canSave = cfg[PCHR.VERSION] >= 4 && cfg[PCHR.SAVE];
+  if (canSave && savedVol !== null && savedVol >= 0 && savedVol <= 5) volLevel = savedVol;
   const setBtn = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_BTN] ? cfg[PCHR.SET_BTN] : 8;
   const setHold = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_HOLD] ? cfg[PCHR.SET_HOLD] : 120;
   const histB = [], histT = [];
@@ -233,6 +238,10 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
         continue;
       }
       if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
+      if (b === 1 && mode === IDLE && volShow && canSave) {   // 音量の画面で決定 → 保存
+        volShow = 45; volSaved = 1; event = "volsave";
+        continue;
+      }
       histPush(b, now);
       if (cmdLen && histMatches(cmdLen)) {
         histClear(); pending = 0;
@@ -243,7 +252,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
       }
       if (b === cfg[PCHR.VOL_BTN] && mode === IDLE) {
         volLevel = volLevel + 1 >= 6 ? 0 : volLevel + 1;
-        volShow = 45;
+        volShow = 45; volSaved = 0;
         event = "volume";
       }
       const f = cfg[PCHR.FACE + [1, 2, 4, 8, 16].indexOf(b)];
@@ -291,7 +300,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0) {
       if (faceT && --faceT === 0) face = cfg[PCHR.IDLE];
       if (asleep) { fb.fill(0); return { fb, exit: false, event, settime, mode: "sleep" }; }
       if (idleClock && !faceT) {
-        if (volShow) { volShow--; drawVolume(volLevel); } else drawClock(rtc);
+        if (volShow) { volShow--; drawVolume(volLevel, volSaved); } else drawClock(rtc);
         return { fb, exit: false, event, settime, mode: "idle", volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] };
       }
       if (face === cfg[PCHR.IDLE] && cfg[PCHR.BLINK] < count) {

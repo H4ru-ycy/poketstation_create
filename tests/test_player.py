@@ -19,7 +19,8 @@ K = 3            # 1タイマカウントあたりの命令数 (模擬)
 
 class PocBus:
     def __init__(self, filedata):
-        self.flash = filedata
+        self.flash = bytearray(filedata)
+        self.flash_writes = []    # (tick, sector, FIQ が動いていたか)
         self.ram = bytearray(0x800)
         self.io = {}
         self.vram = [0] * 32
@@ -103,6 +104,19 @@ class PocBus:
             if args[0] == 2:
                 self.fiq_cb = args[1]
             cpu.r[0] = old
+        elif n == 0x03:                  # FlashWriteVirtual(sector, src): 128バイト書く
+            sector, src = args[0], args[1]
+            data = bytes(self.ram[src:src + 128]) if src + 128 <= 0x800 else None
+            o = sector * 128
+            if data is None or o + 128 > len(self.flash):
+                raise Halt(f"フラッシュの書き込みがおかしい: sector {sector} src {src:x}")
+            fiq_on = False
+            for a, v in self.io_log:
+                if a == 0x0A000008 and v & 0x2000: fiq_on = True
+                if a == 0x0A00000C and v & 0x2000: fiq_on = False
+            self.flash[o:o + 128] = data
+            self.flash_writes.append((self.tick(), sector, fiq_on))
+            cpu.r[0] = 0
         elif n == 0x13:
             cpu.r[0] = 0xD8              # カーネルRAM上のアラーム設定
         else:

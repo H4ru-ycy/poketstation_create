@@ -8,6 +8,7 @@
  *   決めたボタン (初期値: 下) を4秒長押し : 日付と時刻を合わせる
  *       上下で数字を変える、右で次の項目 (西暦・月・日・時・分。選んだ項目が点滅)、左で保存して待機に戻る
  *   音量のボタン (初期値: 右) : 待機中に押すたびに音量を変える (切 → 1 → … → 5 → 切)。ピッと鳴って音量の画面が少し出る
+ *       音量の画面が出ている間に決定を押すと、その音量をファイルの中 (PSET) に保存し、次に起動したときもその音量になる
  *   3秒押し続ける (どのボタンでも) : 時計画面 (GUI) に戻る
  *
  * 設定は変換ツールが書き出す PCHR ブロック (32bitワードの並び。tools/mkpoc.py を参照)。
@@ -50,7 +51,9 @@ enum {
     C_IDLE_OFF,              /* 待機の表示を消すまで (tick, 0 = 消さない)。消えたら決定で戻る */
     C_SET_BTN,               /* 時刻合わせに入るボタン (0 = 下) */
     C_SET_HOLD,              /* そのボタンを押し続ける時間 (tick, 0 = 4秒) */
-    C_WORDS = 44
+    /* ここから version 4 */
+    C_SAVE = 44,             /* 設定を残す 128バイト (PSET) のアドレス (0 = 残さない) */
+    C_WORDS = 48
 };
 #define PCHR_MAGIC 0x52484350u   /* "PCHR" */
 
@@ -245,7 +248,10 @@ static void beep_start(u32 gain)
 static const u32 speaker_rows[14] = {   /* y=9..22, bit0 = x1 */
     0x20, 0x30, 0x38, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x38, 0x30, 0x20,
 };
-static void draw_volume(u32 level)
+#define PSET_MAGIC 0x54455350u   /* "PSET" */
+static u32 save_buf[32];
+static const u32 check_rows[4] = { 0x20, 0x10, 0x09, 0x06 };   /* ✓ */
+static void draw_volume(u32 level, u32 saved)
 {
     for (u32 y = 0; y < 32; y++) fb[y] = 0;
     for (u32 y = 0; y < 14; y++) fb[9 + y] |= speaker_rows[y] << 1;
@@ -267,6 +273,7 @@ static void draw_volume(u32 level)
     } else {
         put_small(10, 25, level); put_small(14, 25, S_SLASH); put_small(18, 25, VOL_LEVELS - 1);
     }
+    if (saved) for (u32 y = 0; y < 4; y++) fb[25 + y] |= check_rows[y] << 24;   /* 保存した */
 }
 
 static void draw_days(void)
@@ -353,6 +360,10 @@ int chara_main(const u32 *c)
     u32 pending = 0, singing_sound = 0, beeping = 0, vol_show = 0;
     u32 al = (swi_get_alarm_setting()[0] >> 18) & 3;
     u32 vol_level = al == 2 ? 0 : al == 1 ? 1 : 2;      /* 最初は時計画面の音量設定から */
+    const u32 *save = (cfg[C_VERSION] >= 4 && cfg[C_SAVE]) ? (const u32 *)cfg[C_SAVE] : 0;
+    if (save && save[0] == PSET_MAGIC && save[1] >= 1 && save[1] <= VOL_LEVELS)
+        vol_level = save[1] - 1;                       /* 保存した音量 (または変換ツールで決めた最初の音量) */
+    u32 vol_saved = 0;
     u32 anim_idx = 0, anim_wait = 0, anim_k = 0, sing_t0 = 0;
     u32 set_wait = 0, set_idle = 0, rep = 0;
     u32 idle_clock = cfg[C_VERSION] >= 3 && cfg[C_IDLE_CLOCK];
@@ -433,6 +444,16 @@ int chara_main(const u32 *c)
                 mode = M_IDLE; long_done = 1; hist_n = 0;
                 continue;
             }
+            if (b == BTN_FIRE && mode == M_IDLE && vol_show && save) {   /* 音量の画面で決定 → 保存 */
+                if (beeping) { snd_stop(); beeping = 0; }             /* 書いている間はフラッシュを読めないので音を止める */
+                if (save[0] != PSET_MAGIC || save[1] != vol_level + 1) {
+                    for (u32 k = 0; k < 32; k++) save_buf[k] = 0;
+                    save_buf[0] = PSET_MAGIC; save_buf[1] = vol_level + 1;
+                    swi_flash_write_virtual((cfg[C_SAVE] - 0x02000000u) >> 7, save_buf);
+                }
+                vol_show = TICK_HZ * 3 / 2; vol_saved = 1;
+                continue;
+            }
             hist_push(b, now);
             if (cmd_len && hist_matches(cmd_len)) {    /* コマンド → 曲 */
                 hist_n = 0; pending = 0;
@@ -453,7 +474,7 @@ int chara_main(const u32 *c)
             }
             if (b == cfg[C_VOL_BTN] && mode == M_IDLE) {   /* 音量を変える (押すたびに 切→1→…→5→切) */
                 vol_level = vol_level + 1 >= VOL_LEVELS ? 0 : vol_level + 1;
-                vol_show = TICK_HZ * 3 / 2;
+                vol_show = TICK_HZ * 3 / 2; vol_saved = 0;
                 if (beeping) snd_stop();
                 beeping = 0;
                 if (vol_level) { beep_start(vol_gain[vol_level]); beeping = 1; }
@@ -512,7 +533,7 @@ int chara_main(const u32 *c)
             if (face_t && --face_t == 0) face = cfg[C_IDLE];
             if (asleep) { for (u32 y = 0; y < 32; y++) fb[y] = 0; break; }   /* 表示を消している */
             if (idle_clock && !face_t) {                                     /* 待機は日付と時計 */
-                if (vol_show) { vol_show--; draw_volume(vol_level); }   /* 音量を変えた直後は音量の画面 */
+                if (vol_show) { vol_show--; draw_volume(vol_level, vol_saved); }   /* 音量を変えた直後は音量の画面 */
                 else draw_clock();
                 break;
             }

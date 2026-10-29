@@ -383,8 +383,9 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
             <div class="field"><label for="charaSetBtn">長押しで日付と時刻の設定</label><select id="charaSetBtn"><option value="down">下ボタン</option><option value="up">上ボタン</option><option value="left">左ボタン</option><option value="right">右ボタン</option><option value="fire">決定ボタン</option></select></div>
             <div class="field"><label for="charaSetHold">押し続ける時間 (秒)</label><input id="charaSetHold" type="number" min="1" max="8" step="0.5" value="4" inputmode="decimal"></div>
             <div class="field"><label for="charaVolBtn">待機中に押すと音量を変える</label><select id="charaVolBtn" data-btnsel></select></div>
+            <div class="field"><label for="charaStartVol">最初の音量</label><select id="charaStartVol"><option value="">時計画面の設定のまま</option><option value="1">1</option><option value="2">2 (普通)</option><option value="3">3</option><option value="4">4</option><option value="5">5 (いちばん大きい)</option><option value="0">切</option></select></div>
           </div>
-          <p class="note">音量は 切 → 1 → 2 (普通) → 3 → 4 → 5 (いちばん大きい) → 切 の順に変わり、ピッと鳴って、スピーカーと棒の音量の画面が1.5秒出ます (そのあと日付と時計に戻ります)。最初は時計画面の音量設定 (普通=2、小=1、消音=切) から始まります。待機の表示が日付と時計のときに使えます。</p>
+          <p class="note">音量は 切 → 1 → 2 (普通) → 3 → 4 → 5 (いちばん大きい) → 切 の順に変わり、ピッと鳴って、スピーカーと棒の音量の画面が1.5秒出ます (そのあと日付と時計に戻ります)。<b>音量の画面が出ている間に決定を押すと、その音量を保存します</b> (✓が出ます)。保存した音量は、次に起動したときも、隠しコマンドの曲にも使われます (次に保存するまで)。保存していないときは「最初の音量」から、それも「時計画面の設定のまま」なら時計画面の音量設定 (普通=2、小=1、消音=切) から始まります。待機の表示が日付と時計のときに使えます。</p>
           <p class="note">設定画面では、上下で数字を変え、右で次の項目 (西暦 → 月 → 日 → 時 → 分。選んでいる項目が点滅)、左で保存して待機に戻ります。30秒さわらないと保存せずに戻ります。ここで合わせた日時は、ポケステ本体の時計と、日数の計算に使われます。</p>
           <p class="note">設定のボタン以外のボタンを3秒押し続けると、ポケステの時計画面に戻ります。</p>
           <ul class="warn" id="charaWarn"></ul>
@@ -891,8 +892,17 @@ function buildPocFile(frames, delay, title, music = null, charaCfg = null) {
   if (charaCfg && music) {   // 1回だけ鳴らす曲の終わりの目印 (休符1ステップ)
     const m2 = new Uint8Array(pad4(music.length) + 16); m2.set(music); music = m2;
   }
-  const pchr = charaCfg ? new Uint8Array(charaCfg.buffer.slice(0)) : null;
+  let pchr = charaCfg ? new Uint8Array(charaCfg.buffer.slice(0)) : null;
   const charaAddr = pchr ? framesAddr + count * 128 + (music ? music.length : 0) : 0;
+  if (pchr) {   // 設定を残す 128バイト (PSET)。ポケステの決定ボタンで音量を書きこむ。128バイト境界に置く
+    const end = charaAddr + pchr.length, pad = (128 - (end - BASE) % 128) % 128, psetAddr = end + pad;
+    const out = new Uint8Array(pchr.length + pad + 128); out.set(pchr);
+    const ov = new DataView(out.buffer);
+    ov.setUint32(44 * 4, psetAddr, true);
+    const sv = charaCfg.startVol;
+    if (sv !== undefined && sv !== null && sv >= 0 && sv <= 5) { ov.setUint32(pchr.length + pad, 0x54455350, true); ov.setUint32(pchr.length + pad + 4, sv + 1, true); }
+    pchr = out;
+  }
   bv.setUint32(8, framesAddr, true); bv.setUint32(12, count, true); bv.setUint32(16, delay, true);
   bv.setUint32(20, musicAddr, true); bv.setUint32(24, charaAddr, true);
 
@@ -3027,7 +3037,7 @@ function newChara() {
     baseDate: "2026-01-22", countFrom: 0, daysY: 12,
     show: 5, dblWin: 0.4, longTime: 1, cmdGap: 1, exit: 3,
     singMode: "faces", singFirst: 0, singCount: 4, singSync: 3, singDelay: 4,
-    idleShow: "clock", idleOff: 30, setBtn: "down", setHold: 4, volBtn: "right",
+    idleShow: "clock", idleOff: 30, setBtn: "down", setHold: 4, volBtn: "right", startVol: "",
   };
 }
 let chara = newChara();
@@ -3056,6 +3066,7 @@ function validChara(x) {
   c.idleOff = Math.round(num(x.idleOff, 0, 600, 30));
   c.setBtn = btn(x.setBtn) || "down"; c.setHold = num(x.setHold, 1, 8, 4);
   c.volBtn = x.volBtn === "" ? "" : (btn(x.volBtn) || "right");
+  c.startVol = x.startVol !== "" && x.startVol !== null && x.startVol !== undefined && Number.isInteger(+x.startVol) && +x.startVol >= 0 && +x.startVol <= 5 ? +x.startVol : "";
   return c;
 }
 
@@ -3066,7 +3077,7 @@ function pcharWords(c) {
   const tick = (sec) => Math.max(1, Math.round(sec * 30));
   const btn = (b) => CHARA_BTN[b] || 0;
   const [y, m, d] = c.baseDate.split("-").map(Number);
-  w[0] = 0x52484350; w[1] = 3;
+  w[0] = 0x52484350; w[1] = 4;
   w[2] = c.idle < state.frames.length ? c.idle : 0; w[3] = fr(c.blink);
   for (let i = 0; i < 5; i++) w[4 + i] = fr(c.faces[i]);
   w[9] = tick(c.faceHold);
@@ -3088,6 +3099,8 @@ function pcharWords(c) {
   w[41] = c.idleOff > 0 ? tick(c.idleOff) : 0;
   w[42] = btn(c.setBtn) || 8; w[43] = tick(c.setHold);
   w[33] = btn(c.volBtn);
+  // version 4: w[44] は PSET の場所 (buildPocFile が書く)。startVol は PSET の中身
+  w.startVol = c.startVol === "" || c.startVol === undefined || c.startVol === null ? null : Number(c.startVol);
   return w;
 }
 
@@ -3103,6 +3116,7 @@ function charaReadme() {
     chara.cmd.length ? `  ${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
     chara.cmd.length && chara.singMode === "anim" ? `  (曲の間はコマ ${chara.singFirst + 1} から ${chara.singCount}コマのアニメーション)` : "",
     chara.volBtn ? `  待機中に${nm(chara.volBtn)}ボタン  音量を変える (切→1→2→3→4→5→切。ピッと鳴る)` : "",
+    chara.volBtn ? "  音量の画面が出ている間に決定  その音量を保存 (次の起動と曲にも使う)" : "",
     `  ${nm(chara.setBtn)}ボタンを${chara.setHold}秒長押し  日付と時刻の設定 (上下で変える・右で次の項目・左で保存して待機へ)`,
     "  どれかを3秒押し続ける  時計画面に戻る",
     "  (時計画面で消音にしていると、曲は音を出さずに進みます)",
@@ -3137,6 +3151,7 @@ function buildCharaUi() {
   $("singRows").replaceChildren(...SING_ROWS.map(([key, label]) => faceRow(key, label)));
   $("charaFaces").replaceChildren(...FACE_ROWS.map(([key, label]) => faceRow(key, label)));
   $("charaVolBtn").onchange = () => { chara.volBtn = $("charaVolBtn").value; charaChanged(); };
+  $("charaStartVol").onchange = () => { const v = $("charaStartVol").value; chara.startVol = v === "" ? "" : +v; charaSavedVol = null; charaChanged(); };
   $("charaSetBtn").onchange = () => { chara.setBtn = $("charaSetBtn").value; charaChanged(); };
   $("charaSetHold").onchange = () => { const v = Math.max(1, Math.min(8, +$("charaSetHold").value || 4)); $("charaSetHold").value = v; chara.setHold = v; charaChanged(); };
   $("idleShow").onchange = () => { chara.idleShow = $("idleShow").value; charaChanged(); };
@@ -3210,6 +3225,7 @@ function renderChara() {
   if (!chara.enabled) return;
   const n = state.frames.length;
   $("charaVolBtn").value = chara.volBtn;
+  $("charaStartVol").value = String(chara.startVol);
   $("charaSetBtn").value = chara.setBtn; $("charaSetHold").value = chara.setHold;
   $("idleShow").value = chara.idleShow; $("idleOff").value = chara.idleOff;
   $("singMode").value = chara.singMode;
@@ -3330,13 +3346,15 @@ function makeDaysBg() {
 
 /* ---- プレビュー: ポケステと同じ動き (chara.js) を 30Hz で動かす ---- */
 /* padLatch: 1tick より短いタップも1回は押したことにする */
-let charaClockOffset = 0, charaGain = 16;
+let charaClockOffset = 0, charaGain = 16, charaSavedVol = null;
 let charaEngine = null, padBits = 0, keyBits = 0, padLatch = 0, charaMode = "idle";
 function charaTick() {
   if (!charaEngine) {
     const words = pcharWords(chara);
     const pmu = songHasNotes() ? { count: song.bars * 16, steplen: stepLen(song.bpm) } : null;
-    charaEngine = CharaEngine(Array.from(words), state.frames.map(frameToWords), pmu);
+    const cfgArr = Array.from(words); cfgArr[44] = 1;     // プレビューでも「保存できる」扱い
+    const sv = charaSavedVol !== null ? charaSavedVol : words.startVol;
+    charaEngine = CharaEngine(cfgArr, state.frames.map(frameToWords), pmu, 0, sv === undefined ? null : sv);
   }
   const r = charaEngine.tick(padBits | keyBits | padLatch, rtcFromDate(new Date(Date.now() + charaClockOffset)));
   if (r.event === "settime") {          // プレビューでは端末の時計は変えずに、ずらした時刻を使う
@@ -3346,6 +3364,10 @@ function charaTick() {
   }
   padLatch = 0;
   if (r.gain !== undefined) charaGain = r.gain;
+  if (r.event === "volsave") {
+    charaSavedVol = r.volume;
+    toast(r.volume ? `音量 ${r.volume} / 5 を保存しました (次に起動しても、曲もこの音量)` : "音量 切 を保存しました");
+  }
   if (r.event === "volume") {
     toast(r.volume ? `音量 ${r.volume} / 5` : "音量 切");
     if (r.volume) blip(84, 128, 0.22 * Math.min(508, 90 * r.gain / 16) / 90);   // 実機の「ピッ」(ド6)
