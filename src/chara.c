@@ -54,11 +54,13 @@ enum {
     /* ここから version 4 */
     C_SAVE = 44,             /* 設定を残す 128バイト (PSET) のアドレス (0 = 残さない) */
     C_VOL_HOLD = 45,         /* 音量のボタンを押し続けると音量メニュー (tick, 0 = 3秒) */
+    C_CMD_BTN = 46,          /* 押し続けるとコマンド入力モードになるボタン (0 = 待機中にそのままコマンド) */
+    C_CMD_HOLD = 47,         /* そのボタンを押し続ける時間 (tick, 0 = 3秒) */
     C_WORDS = 48
 };
 #define PCHR_MAGIC 0x52484350u   /* "PCHR" */
 
-enum { M_IDLE, M_CLOCK, M_DAYS, M_SING, M_SET, M_VOL };
+enum { M_IDLE, M_CLOCK, M_DAYS, M_SING, M_SET, M_VOL, M_CMD };
 
 /* 小さい文字の番号 (font.h の SMALL_CHARS の並び) */
 enum { S_A = 10, S_D, S_E, S_F, S_H, S_I, S_M, S_N, S_O, S_R, S_S, S_T, S_U, S_W, S_SLASH, S_COLON, S_MINUS, S_SPACE };
@@ -277,6 +279,20 @@ static void draw_volume(u32 level, u32 saved)
     if (saved) for (u32 y = 0; y < 4; y++) fb[25 + y] |= check_rows[y] << 24;   /* 保存した */
 }
 
+/* コマンド入力モード: 「ENTER」と、コマンドの長さだけの□ (入れた数だけ■)。まちがえたら「NO」 */
+static void draw_cmd(u32 n, u32 len, u32 ng)
+{
+    for (u32 y = 0; y < 32; y++) fb[y] = 0;
+    put_small(6, 6, S_E); put_small(10, 6, S_N); put_small(14, 6, S_T); put_small(18, 6, S_E); put_small(22, 6, S_R);
+    u32 x0 = (32 - (len * 4 - 1)) / 2;
+    for (u32 i = 0; i < len; i++) {
+        u32 x = x0 + i * 4;
+        fb[15] |= 7u << x; fb[17] |= 7u << x;
+        fb[16] |= (i < n ? 7u : 5u) << x;
+    }
+    if (ng) { put_small(12, 22, S_N); put_small(16, 22, S_O); }
+}
+
 static void draw_days(void)
 {
     u32 date = swi_get_bcd_date();
@@ -366,6 +382,11 @@ int chara_main(const u32 *c)
         vol_level = save[1] - 1;                       /* 保存した音量 (または変換ツールで決めた最初の音量) */
     u32 vol_saved = 0, vol_t = 0, vol_wait = 0, vol_idle = 0, vol_done = 0;
     u32 vol_btn = cfg[C_VOL_BTN];
+    u32 cmd_btn = cfg[C_VERSION] >= 4 ? cfg[C_CMD_BTN] : 0;
+    u32 cmd_hold = cfg[C_VERSION] >= 4 && cfg[C_CMD_HOLD] ? cfg[C_CMD_HOLD] : TICK_HZ * 3;
+    u32 cmd_t = 0, cmd_n = 0, cmd_wait = 0, cmd_idle = 0, cmd_ng = 0, cmd_bad = 0, go_sing = 0;
+    u32 cmd_fire = 0;                                    /* コマンドに決定が入っているか (入っていなければ決定でやめる) */
+    for (u32 i = 0; i < (cfg[C_CMD_LEN] > 8 ? 8 : cfg[C_CMD_LEN]); i++) if (cfg[C_CMD + i] == BTN_FIRE) cmd_fire = 1;
     u32 vol_hold = cfg[C_VERSION] >= 4 && cfg[C_VOL_HOLD] ? cfg[C_VOL_HOLD] : TICK_HZ * 3;
     u32 anim_idx = 0, anim_wait = 0, anim_k = 0, sing_t0 = 0;
     u32 set_wait = 0, set_idle = 0, rep = 0;
@@ -389,7 +410,7 @@ int chara_main(const u32 *c)
         hold = (btn && btn == prev) ? hold + 1 : (btn ? 1 : 0);
         prev = btn;
         /* 時刻合わせ・音量メニューの間と、長押しに使うボタン (時刻合わせ・日数・音量) では終了しない */
-        if (mode == M_SET || mode == M_VOL || btn == set_btn || btn == cfg[C_LONG_BTN] || btn == vol_btn) hold = 0;
+        if (mode == M_SET || mode == M_VOL || mode == M_CMD || btn == set_btn || btn == cfg[C_LONG_BTN] || btn == vol_btn || btn == cmd_btn) hold = 0;
         if (beeping && !snd.on) { snd_stop(); beeping = 0; }   /* ピッが終わった */
         if (hold >= cfg[C_EXIT]) {
             if (singing_sound || beeping) snd_stop();
@@ -459,6 +480,32 @@ int chara_main(const u32 *c)
             if ((down & BTN_LEFT) || (!vol_done && ++vol_idle >= TICK_HZ * 10)) vol_done = 1;   /* 左か10秒さわらない: 保存せずに戻る */
             down = 0;
         }
+        /* コマンド入力モード: コマンドの数だけ押すと、合っていれば曲、ちがえば「NO」で最初から */
+        if (mode == M_CMD) {
+            if (cmd_wait) { if (!btn) cmd_wait = 0; down = 0; }   /* 入ったときのボタンを離すまで待つ */
+            if (cmd_ng) { if (--cmd_ng == 0) cmd_n = 0; down = 0; }   /* 「NO」を見せている */
+            if (down) cmd_idle = 0;
+            for (u32 b = 1; b <= BTN_UP; b <<= 1) {
+                if (!(down & b) || mode != M_CMD) continue;
+                if (b == BTN_FIRE && !cmd_fire) { mode = M_IDLE; break; }   /* 決定: やめる */
+                if (cfg[C_CMD + cmd_n] != b) cmd_bad = 1;              /* ちがうボタン (最後まで押してから NO) */
+                if (++cmd_n >= cmd_len) {
+                    if (cmd_bad) { cmd_ng = TICK_HZ; cmd_bad = 0; }
+                    else { go_sing = 1; mode = M_IDLE; }
+                    break;
+                }
+            }
+            if (mode == M_CMD && ++cmd_idle >= TICK_HZ * 10) mode = M_IDLE;   /* 10秒さわらなければやめる */
+            if (mode != M_CMD) { long_done = 1; idle_t = 0; hist_n = 0; pending = 0; }
+            down = 0;
+        }
+        /* コマンドのボタン (例: 左) を押し続ける → コマンド入力モード */
+        if (cmd_btn && cmd_len && btn == cmd_btn && mode == M_IDLE && !asleep && !go_sing) {
+            if (++cmd_t >= cmd_hold) {
+                mode = M_CMD; cmd_wait = 1; cmd_idle = 0; cmd_n = 0; cmd_ng = 0; cmd_bad = 0; cmd_t = 0;
+                pending = 0; hist_n = 0; down = 0; face = cfg[C_IDLE]; face_t = 0;
+            }
+        } else cmd_t = 0;
         /* 音量のボタン (初期値: 右) を押し続ける → 音量メニュー */
         if (vol_btn && btn == vol_btn && mode == M_IDLE && !asleep) {
             if (++vol_t >= vol_hold) {
@@ -491,22 +538,9 @@ int chara_main(const u32 *c)
                 continue;
             }
             hist_push(b, now);
-            if (cmd_len && hist_matches(cmd_len)) {    /* コマンド → 曲 */
-                hist_n = 0; pending = 0;
-                mode = M_SING; mode_t = cfg[C_SHOW];
-                anim_idx = 0; anim_wait = 0; anim_k = 0; sing_t0 = now;
-                if (beeping) { snd_stop(); beeping = 0; }
-                int r = snd_init(music);
-                if (r) {
-                    int muted = vol_level == 0;
-                    snd.loop = 0;
-                    snd.gain = vol_gain[vol_level];
-                    snd_start();
-                    if (muted) { DAC_CTRL = 0; IOP_STOP = IOP_SOUND; }   /* 音量「切」: 音は出さずに進める */
-                    snd.on = 1;
-                    singing_sound = 1;
-                }
-                continue;
+            if (cmd_len && !cmd_btn && hist_matches(cmd_len)) {    /* コマンド → 曲 (コマンド入力モードを使わないとき) */
+                go_sing = 1;
+                break;
             }
             u32 f = cfg[C_FACE + (b == 1 ? 0 : b == 2 ? 1 : b == 4 ? 2 : b == 8 ? 3 : 4)];
             if (f < count) { face = f; face_t = cfg[C_FACE_HOLD]; }
@@ -515,6 +549,23 @@ int chara_main(const u32 *c)
                      now - hist_t[hist_n - 2] <= cfg[C_DBL_WIN]) {
                 if (cmd_len && cmd_in_progress()) pending = now + cfg[C_DBL_WIN];
                 else { mode = M_CLOCK; mode_t = cfg[C_SHOW]; hist_n = 0; }
+            }
+        }
+        if (go_sing) {                                 /* 曲を鳴らし始める */
+            go_sing = 0;
+            hist_n = 0; pending = 0;
+            mode = M_SING; mode_t = cfg[C_SHOW];
+            anim_idx = 0; anim_wait = 0; anim_k = 0; sing_t0 = now;
+            if (beeping) { snd_stop(); beeping = 0; }
+            int r = snd_init(music);
+            if (r) {
+                int muted = vol_level == 0;
+                snd.loop = 0;
+                snd.gain = vol_gain[vol_level];
+                snd_start();
+                if (muted) { DAC_CTRL = 0; IOP_STOP = IOP_SOUND; }   /* 音量「切」: 音は出さずに進める */
+                snd.on = 1;
+                singing_sound = 1;
             }
         }
         if (pending && now >= pending) {
@@ -531,6 +582,9 @@ int chara_main(const u32 *c)
             break;
         case M_SET:
             draw_set(now);
+            break;
+        case M_CMD:
+            draw_cmd(cmd_n, cmd_len, cmd_ng);
             break;
         case M_VOL:
             draw_volume(vol_level, vol_saved);

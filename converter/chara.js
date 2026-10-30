@@ -14,7 +14,7 @@ const PCHR = {
   SING_A: 12, SING_B: 13, DBL_BTN: 14, LONG_BTN: 15, CMD_LEN: 16, CMD: 17, BASE_DAY: 25,
   DAY_OFFSET: 26, SHOW: 27, DBL_WIN: 28, LONG: 29, CMD_GAP: 30, DAYS_Y: 31, EXIT: 32, VOL_BTN: 33,
   SING_MODE: 34, SING_FIRST: 35, SING_COUNT: 36, SING_DELAY: 37, SING_SYNC: 38,
-  IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, SAVE: 44, VOL_HOLD: 45, WORDS: 48,
+  IDLE_CLOCK: 40, IDLE_OFF: 41, SET_BTN: 42, SET_HOLD: 43, SAVE: 44, VOL_HOLD: 45, CMD_BTN: 46, CMD_HOLD: 47, WORDS: 48,
 };
 const CHARA_NONE = 0xFFFFFFFF;
 const CHARA_BTN = { fire: 1, right: 2, left: 4, down: 8, up: 16 };
@@ -157,7 +157,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
   }
 
   // 状態 (chara.c の chara_main のローカル変数と同じ)
-  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3, SET = 4, VOL = 5;
+  const IDLE = 0, CLOCK = 1, DAYS = 2, SING = 3, SET = 4, VOL = 5, CMDM = 6;
   const cmdLen = Math.min(8, cfg[PCHR.CMD_LEN]);
   let now = 0, mode = IDLE, modeT = 0, face = cfg[PCHR.IDLE], faceT = 0;
   let blinkT = 0, blinkNext = 100, blinkOn = 0;
@@ -171,6 +171,22 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
   let volLevel = alarmVol === 2 ? 0 : alarmVol === 1 ? 1 : 2, volSaved = 0, volT = 0, volWait = 0, volIdle = 0, volDone = 0;
   const volBtn = cfg[PCHR.VOL_BTN];
   const volHold = cfg[PCHR.VERSION] >= 4 && cfg[PCHR.VOL_HOLD] ? cfg[PCHR.VOL_HOLD] : 90;
+  const cmdBtn = cfg[PCHR.VERSION] >= 4 ? cfg[PCHR.CMD_BTN] : 0;
+  const cmdHold = cfg[PCHR.VERSION] >= 4 && cfg[PCHR.CMD_HOLD] ? cfg[PCHR.CMD_HOLD] : 90;
+  let cmdT = 0, cmdN = 0, cmdWait = 0, cmdIdle = 0, cmdNg = 0, cmdBad = 0, goSing = 0;
+  let cmdFire = 0;
+  for (let i = 0; i < cmdLen; i++) if (cfg[PCHR.CMD + i] === 1) cmdFire = 1;
+  function drawCmd(n, len, ng) {
+    fb.fill(0);
+    putSmall(6, 6, S.E); putSmall(10, 6, S.N); putSmall(14, 6, S.T); putSmall(18, 6, S.E); putSmall(22, 6, S.R);
+    const x0 = Math.trunc((32 - (len * 4 - 1)) / 2);
+    for (let i = 0; i < len; i++) {
+      const x = x0 + i * 4;
+      fb[15] = (fb[15] | (7 << x)) >>> 0; fb[17] = (fb[17] | (7 << x)) >>> 0;
+      fb[16] = (fb[16] | ((i < n ? 7 : 5) << x)) >>> 0;
+    }
+    if (ng) { putSmall(12, 22, S.N); putSmall(16, 22, S.O); }
+  }
   const canSave = cfg[PCHR.VERSION] >= 4 && cfg[PCHR.SAVE];
   if (canSave && savedVol !== null && savedVol >= 0 && savedVol <= 5) volLevel = savedVol;
   const setBtn = cfg[PCHR.VERSION] >= 3 && cfg[PCHR.SET_BTN] ? cfg[PCHR.SET_BTN] : 8;
@@ -202,7 +218,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
     let down = btn & ~prev;
     hold = (btn && btn === prev) ? hold + 1 : (btn ? 1 : 0);
     prev = btn;
-    if (mode === SET || mode === VOL || btn === setBtn || btn === cfg[PCHR.LONG_BTN] || btn === volBtn) hold = 0;
+    if (mode === SET || mode === VOL || mode === CMDM || btn === setBtn || btn === cfg[PCHR.LONG_BTN] || btn === volBtn || btn === cmdBtn) hold = 0;
     if (hold >= cfg[PCHR.EXIT]) return { fb, exit: true, event: singing ? "stop" : null };
     if (mode !== IDLE) { idleT = 0; asleep = 0; }
     else if (asleep) {
@@ -245,6 +261,31 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
       if ((down & 4) || (!volDone && ++volIdle >= 300)) volDone = 1;
       down = 0;
     }
+    if (mode === CMDM) {
+      if (cmdWait) { if (!btn) cmdWait = 0; down = 0; }
+      if (cmdNg) { if (--cmdNg === 0) cmdN = 0; down = 0; }
+      if (down) cmdIdle = 0;
+      for (let b = 1; b <= 16; b <<= 1) {
+        if (!(down & b) || mode !== CMDM) continue;
+        if (b === 1 && !cmdFire) { mode = IDLE; break; }
+        if (cfg[PCHR.CMD + cmdN] !== b) cmdBad = 1;
+        if (++cmdN >= cmdLen) {
+          if (cmdBad) { cmdNg = 30; cmdBad = 0; }
+          else { goSing = 1; mode = IDLE; }
+          break;
+        }
+      }
+      if (mode === CMDM && ++cmdIdle >= 300) mode = IDLE;
+      if (mode !== CMDM) { longDone = 1; idleT = 0; histClear(); pending = 0; }
+      down = 0;
+    }
+    if (cmdBtn && cmdLen && btn === cmdBtn && mode === IDLE && !asleep && !goSing) {
+      if (++cmdT >= cmdHold) {
+        mode = CMDM; cmdWait = 1; cmdIdle = 0; cmdN = 0; cmdNg = 0; cmdBad = 0; cmdT = 0;
+        pending = 0; histClear(); down = 0; face = cfg[PCHR.IDLE]; faceT = 0;
+        event = "cmdmode";
+      }
+    } else cmdT = 0;
     if (volBtn && btn === volBtn && mode === IDLE && !asleep) {
       if (++volT >= volHold) {
         mode = VOL; volWait = 1; volIdle = 0; volDone = 0; volSaved = 0; volT = 0;
@@ -263,13 +304,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
       }
       if (mode === CLOCK || mode === DAYS) { mode = IDLE; longDone = 1; histClear(); continue; }
       histPush(b, now);
-      if (cmdLen && histMatches(cmdLen)) {
-        histClear(); pending = 0;
-        mode = SING; modeT = cfg[PCHR.SHOW];
-        animIdx = 0; animWait = 0; animK = 0; singT0 = now;
-        if (song) { singing = 1; singAt = now; event = "sing"; }
-        continue;
-      }
+      if (cmdLen && !cmdBtn && histMatches(cmdLen)) { goSing = 1; break; }
       const f = cfg[PCHR.FACE + [1, 2, 4, 8, 16].indexOf(b)];
       if (f < count) { face = f; faceT = cfg[PCHR.FACE_HOLD]; }
       const n = histB.length;
@@ -279,6 +314,13 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
         else { mode = CLOCK; modeT = cfg[PCHR.SHOW]; histClear(); }
       }
     }
+    if (goSing) {
+      goSing = 0;
+      histClear(); pending = 0;
+      mode = SING; modeT = cfg[PCHR.SHOW];
+      animIdx = 0; animWait = 0; animK = 0; singT0 = now;
+      if (song) { singing = 1; singAt = now; event = "sing"; }
+    }
     if (pending && now >= pending) { pending = 0; histClear(); if (mode === IDLE) { mode = CLOCK; modeT = cfg[PCHR.SHOW]; } }
 
     if (mode === CLOCK || mode === DAYS) {
@@ -286,6 +328,8 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
       if (--modeT === 0) mode = IDLE;
     } else if (mode === SET) {
       drawSet();
+    } else if (mode === CMDM) {
+      drawCmd(cmdN, cmdLen, cmdNg);
     } else if (mode === VOL) {
       drawVolume(volLevel, volSaved);
       if (volDone && --volDone === 0) { mode = IDLE; longDone = 1; idleT = 0; histClear(); pending = 0; return { fb, exit: false, event, settime, mode: "vol", volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] }; }
@@ -327,7 +371,7 @@ function CharaEngine(cfg, frames, song, alarmVol = 0, savedVol = null) {
       } else { blinkOn = 0; blinkT = 0; }
       fbFrame(blinkOn ? cfg[PCHR.BLINK] : face);
     }
-    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set", "vol"][mode], volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] };
+    return { fb, exit: false, event, settime, mode: ["idle", "clock", "days", "sing", "set", "vol", "cmd"][mode], volume: volLevel, gain: CHARA_VOL_GAIN[volLevel] };
   }
   return { tick };
 }

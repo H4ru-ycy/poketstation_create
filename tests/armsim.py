@@ -5,6 +5,9 @@ PocketStation 実機の代わりに player を動かし、
 液晶VRAM・ボタン・タイマ・SWI を模擬して動作を確認するためのもの。
 対応: データ処理命令, MUL/MLA/UMULL/SMULL, LDR/STR(B/H無しのword/byte), LDM/STM, B/BL/BX, SWI
 """
+import os
+SWI_CLOBBER = [int(x) for x in os.environ.get("SWI_CLOBBER", "1,2,3,12").split(",")]
+SWI_FLAGS = tuple(int(c) for c in os.environ["SWI_FLAGS"]) if os.environ.get("SWI_FLAGS") else None
 import struct
 
 M32 = 0xFFFFFFFF
@@ -90,8 +93,10 @@ class ARM:
         if (ins >> 24) & 15 == 15:                     # SWI
             self.bus.swi(self, ins & 0xFF)
             # 実機の BIOS と同じく r1-r3, r12 は壊れることがある (呼び出し規約)。わざと壊して確かめる
-            for k in (1, 2, 3, 12):
+            for k in SWI_CLOBBER:
                 self.r[k] = (0xDEAD0000 | k) & M32
+            if SWI_FLAGS is not None:                  # 試験用: SWI のあとの条件フラグを変える
+                self.N, self.Z, self.C, self.V = SWI_FLAGS
             return
         if (ins & 0x0FC000F0) == 0x00000090:          # MUL / MLA
             rd, rn, rs, rm = (ins >> 16) & 15, (ins >> 12) & 15, (ins >> 8) & 15, ins & 15

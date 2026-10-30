@@ -380,6 +380,11 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
             <p class="note">8個まで。曲は作曲パネルの曲を使います。曲の途中で決定を押すと止まります。</p>
           </div>
           <div class="chara-grid">
+            <div class="field"><label for="charaCmdBtn">長押しでコマンド入力モード</label><select id="charaCmdBtn" data-btnsel></select></div>
+            <div class="field"><label for="charaCmdHold">押し続ける時間 (秒)</label><input id="charaCmdHold" type="number" min="1" max="8" step="0.5" value="3" inputmode="decimal"></div>
+          </div>
+          <p class="note">「使わない」なら、待機中にそのままコマンドを押すと曲になります。ボタンを選ぶと、そのボタンを押し続けたときだけ「ENTER」と□の入力画面になり、そこでコマンドを押します (押した数だけ■。まちがえると「NO」で最初から。決定か10秒さわらないとやめる)。ふだんのボタン操作で曲がまちがって鳴りません。</p>
+          <div class="chara-grid">
             <div class="field"><label for="charaSetBtn">長押しで日付と時刻の設定</label><select id="charaSetBtn"><option value="down">下ボタン</option><option value="up">上ボタン</option><option value="left">左ボタン</option><option value="right">右ボタン</option><option value="fire">決定ボタン</option></select></div>
             <div class="field"><label for="charaSetHold">押し続ける時間 (秒)</label><input id="charaSetHold" type="number" min="1" max="8" step="0.5" value="4" inputmode="decimal"></div>
             <div class="field"><label for="charaVolBtn">長押しで音量メニュー</label><select id="charaVolBtn" data-btnsel></select></div>
@@ -388,7 +393,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           </div>
           <p class="note">待機中に音量のボタン (初期値: 右) を押し続けると、スピーカーと棒の音量メニューになります。上 (か右) で大きく、下で小さく (切・1〜5)、変えるたびにピッと鳴ります。<b>決定で保存して戻ります</b> (✓が出ます)。左か、10秒さわらないと保存せずに戻ります (その音量は電源を切るまで使います)。1回押しただけでは何も起きないので、コマンドの邪魔をしません。保存した音量は、次に起動したときも、隠しコマンドの曲にも使われます (次に保存するまで)。保存していないときは「最初の音量」から、それも「時計画面の設定のまま」なら時計画面の音量設定 (普通=2、小=1、消音=切) から始まります。</p>
           <p class="note">設定画面では、上下で数字を変え、右で次の項目 (西暦 → 月 → 日 → 時 → 分。選んでいる項目が点滅)、左で保存して待機に戻ります。30秒さわらないと保存せずに戻ります。ここで合わせた日時は、ポケステ本体の時計と、日数の計算に使われます。</p>
-          <p class="note">長押しに使うボタン (日数・日時の設定・音量) 以外のボタン (決定など) を3秒押し続けると、ポケステの時計画面に戻ります。</p>
+          <p class="note">長押しに使うボタン (日数・日時の設定・音量・コマンド入力) 以外のボタン (決定など) を3秒押し続けると、ポケステの時計画面に戻ります。</p>
           <ul class="warn" id="charaWarn"></ul>
           <p class="note" id="charaInfo"></p>
         </div>
@@ -721,6 +726,7 @@ textarea { font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink); 
           <dt>長押し</dt><dd>基準日からの日数</dd>
           <dt>コマンド</dt><dd>曲を最後まで鳴らして待機に戻る (決定で止める)</dd>
           <dt>時刻合わせ</dt><dd>下を4秒長押し (変えられます) → ▲▼で変える、▶で次の項目、◀で保存</dd>
+          <dt>コマンド入力</dt><dd>設定したボタン (例: 左) を3秒長押し → ENTER の画面でコマンド</dd>
           <dt>音量</dt><dd>右を3秒長押し (変えられます) → ▲▼で変える、決定で保存、◀で戻る</dd>
           <dt>3秒押す</dt><dd>時計画面に戻る (決定など、長押しに使っていないボタン)</dd>
         </dl>
@@ -3039,7 +3045,7 @@ function newChara() {
     baseDate: "2026-01-22", countFrom: 0, daysY: 12,
     show: 5, dblWin: 0.4, longTime: 3, cmdGap: 1, exit: 3, volHold: 3,
     singMode: "faces", singFirst: 0, singCount: 4, singSync: 3, singDelay: 4,
-    idleShow: "clock", idleOff: 30, setBtn: "down", setHold: 4, volBtn: "right", startVol: "",
+    idleShow: "clock", idleOff: 30, setBtn: "down", setHold: 4, volBtn: "right", startVol: "", cmdBtn: "", cmdHold: 3,
   };
 }
 let chara = newChara();
@@ -3069,6 +3075,7 @@ function validChara(x) {
   c.setBtn = btn(x.setBtn) || "down"; c.setHold = num(x.setHold, 1, 8, 4);
   c.volBtn = x.volBtn === "" ? "" : (btn(x.volBtn) || "right");
   c.volHold = num(x.volHold, 1, 8, 3);
+  c.cmdBtn = btn(x.cmdBtn); c.cmdHold = num(x.cmdHold, 1, 8, 3);
   c.startVol = x.startVol !== "" && x.startVol !== null && x.startVol !== undefined && Number.isInteger(+x.startVol) && +x.startVol >= 0 && +x.startVol <= 5 ? +x.startVol : "";
   return c;
 }
@@ -3102,6 +3109,7 @@ function pcharWords(c) {
   w[41] = c.idleOff > 0 ? tick(c.idleOff) : 0;
   w[42] = btn(c.setBtn) || 8; w[43] = tick(c.setHold);
   w[33] = btn(c.volBtn); w[45] = tick(c.volHold);
+  w[46] = btn(c.cmdBtn); w[47] = tick(c.cmdHold);
   // version 4: w[44] は PSET の場所 (buildPocFile が書く)。startVol は PSET の中身
   w.startVol = c.startVol === "" || c.startVol === undefined || c.startVol === null ? null : Number(c.startVol);
   return w;
@@ -3116,7 +3124,8 @@ function charaReadme() {
     "  ボタンを押す        表情が変わる (しばらくすると待機の表示に戻る)",
     chara.dbl ? `  ${nm(chara.dbl)}ボタンを2回押す   日付と時計` : "",
     chara.long ? `  ${nm(chara.long)}ボタンを長押し   ${chara.baseDate} からの日数` : "",
-    chara.cmd.length ? `  ${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
+    chara.cmd.length && chara.cmdBtn ? `  ${nm(chara.cmdBtn)}ボタンを${chara.cmdHold}秒長押し  コマンド入力モード (ENTER)` : "",
+    chara.cmd.length ? `  ${chara.cmdBtn ? "  そこで " : ""}${chara.cmd.map(nm).join("→")}   曲を最後まで鳴らして待機に戻る (決定で止める)` : "",
     chara.cmd.length && chara.singMode === "anim" ? `  (曲の間はコマ ${chara.singFirst + 1} から ${chara.singCount}コマのアニメーション)` : "",
     chara.volBtn ? `  ${nm(chara.volBtn)}ボタンを${chara.volHold}秒長押し  音量メニュー (上下で変える・決定で保存・左で戻る。保存した音量は次の起動と曲にも使う)` : "",
     `  ${nm(chara.setBtn)}ボタンを${chara.setHold}秒長押し  日付と時刻の設定 (上下で変える・右で次の項目・左で保存して待機へ)`,
@@ -3129,7 +3138,9 @@ function charaWarnings() {
   if (c.long && c.long === c.setBtn) out.push(`長押しの日数と日時の設定が同じボタンです。${c.longTime}秒で日数が出るので、日時の設定に入れません。別のボタンにしてください`);
   if (c.volBtn && (c.volBtn === c.setBtn || c.volBtn === c.long)) out.push("音量メニューのボタンが、日数か日時の設定の長押しと同じです。短いほうの長押しが先に動くので、別のボタンにしてください");
   if (c.dbl && c.dbl === c.setBtn) out.push("2回押しと日時の設定が同じボタンです (2回押したあと押し続けると、時計のあとで設定に入れません)");
-  if (c.cmd.length === 1) out.push("コマンドが1つだけだと、そのボタンを押すたびに曲が鳴ります");
+  if (c.cmd.length === 1 && !c.cmdBtn) out.push("コマンドが1つだけだと、そのボタンを押すたびに曲が鳴ります");
+  if (c.cmdBtn && [c.long, c.setBtn, c.volBtn].includes(c.cmdBtn)) out.push("コマンド入力モードのボタンが、ほかの長押し (日数・日時の設定・音量) と同じです。別のボタンにしてください");
+  if (c.cmdBtn && !c.cmd.length) out.push("コマンドが空です。コマンド入力モードに入れません");
   if (c.cmd.length && c.long && c.cmd.includes(c.long)) out.push(`コマンドの「${CMD_MARK[c.long]}」は長押しのボタンでもあります。コマンドの途中で長押ししないでください`);
   if (c.singMode === "anim" && c.singFirst + c.singCount > state.frames.length) out.push(`曲の間のアニメは、コマ ${c.singFirst + 1}〜${state.frames.length} だけを使います (コマが足りません)`);
   if (c.cmd.length && !songHasNotes()) out.push("曲がありません。コマンドでは曲の表情を出すだけになります (作曲パネルで曲を作れます)");
@@ -3153,6 +3164,8 @@ function buildCharaUi() {
   $("charaVolBtn").onchange = () => { chara.volBtn = $("charaVolBtn").value; charaChanged(); };
   $("charaStartVol").onchange = () => { const v = $("charaStartVol").value; chara.startVol = v === "" ? "" : +v; charaSavedVol = null; charaChanged(); };
   $("charaSetBtn").onchange = () => { chara.setBtn = $("charaSetBtn").value; charaChanged(); };
+  $("charaCmdBtn").onchange = () => { chara.cmdBtn = $("charaCmdBtn").value; charaChanged(); };
+  $("charaCmdHold").onchange = () => { const v = Math.max(1, Math.min(8, +$("charaCmdHold").value || 3)); $("charaCmdHold").value = v; chara.cmdHold = v; charaChanged(); };
   $("charaVolHold").onchange = () => { const v = Math.max(1, Math.min(8, +$("charaVolHold").value || 3)); $("charaVolHold").value = v; chara.volHold = v; charaChanged(); };
   $("charaSetHold").onchange = () => { const v = Math.max(1, Math.min(8, +$("charaSetHold").value || 4)); $("charaSetHold").value = v; chara.setHold = v; charaChanged(); };
   $("idleShow").onchange = () => { chara.idleShow = $("idleShow").value; charaChanged(); };
@@ -3228,6 +3241,7 @@ function renderChara() {
   $("charaVolBtn").value = chara.volBtn;
   $("charaStartVol").value = String(chara.startVol);
   $("charaSetBtn").value = chara.setBtn; $("charaSetHold").value = chara.setHold; $("charaVolHold").value = chara.volHold;
+  $("charaCmdBtn").value = chara.cmdBtn; $("charaCmdHold").value = chara.cmdHold;
   $("idleShow").value = chara.idleShow; $("idleOff").value = chara.idleOff;
   $("singMode").value = chara.singMode;
   $("singRows").hidden = chara.singMode === "anim";
@@ -3384,7 +3398,7 @@ function charaTick() {
   }
   charaMode = r.mode;
   drawLcd(wordsToFrame(r.fb));
-  $("count").textContent = { idle: chara.idleShow === "clock" ? "待機 (日付と時計)" : "待機", sleep: "表示を消しています (決定で戻る)", clock: "日付と時計", days: "日数", sing: "曲", set: "日時の設定: ▲▼で変える ▶で次の項目 ◀で保存", vol: "音量メニュー: ▲▼で変える 決定で保存 ◀で戻る" }[r.mode] || "";
+  $("count").textContent = { idle: chara.idleShow === "clock" ? "待機 (日付と時計)" : "待機", sleep: "表示を消しています (決定で戻る)", clock: "日付と時計", days: "日数", sing: "曲", set: "日時の設定: ▲▼で変える ▶で次の項目 ◀で保存", vol: "音量メニュー: ▲▼で変える 決定で保存 ◀で戻る", cmd: "コマンド入力モード: コマンドを押す (決定でやめる)" }[r.mode] || "";
 }
 
 /* ============================================================

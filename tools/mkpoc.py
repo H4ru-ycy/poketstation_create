@@ -194,6 +194,8 @@ def build_pchr(c):
     w[42] = BUTTONS.get(c.get("setBtn") or "down", 8)          # 時刻合わせに入るボタン
     w[43] = tick(c.get("setHold", 4))                         # 押し続ける時間
     w[45] = tick(c.get("volHold", 3))                         # 音量のボタンを押し続けると音量メニュー
+    w[46] = BUTTONS.get(c.get("cmdBtn") or "", 0)             # 押し続けるとコマンド入力モード (0 = 待機中にそのままコマンド)
+    w[47] = tick(c.get("cmdHold", 3))                         # そのボタンを押し続ける時間
     return struct.pack(f"<{PCHR_WORDS}I", *w)
 
 

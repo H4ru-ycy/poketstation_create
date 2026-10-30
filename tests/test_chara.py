@@ -290,6 +290,46 @@ def scenario_volume(player_path):
     return [r for r in res if r[1]]
 
 
+def script_cmdmode(t):
+    b = 0
+    for k, bb in enumerate([U, U, D, D, L, R]):      # モードの外でコマンドを押しても曲にならない
+        if t == 20 + k * 6: b |= bb
+    if 80 <= t < 180: b |= L                         # 左を3秒 → コマンド入力モード (169 から)
+    for k, bb in enumerate([U, U, D, L, L, R]):      # まちがえる → NO
+        if t == 200 + k * 6: b |= bb
+    for k, bb in enumerate([U, U, D, D, L, R]):      # 正しく入れる → 曲
+        if t == 270 + k * 6: b |= bb
+    if t == 340: b |= F                              # 曲を止める
+    if 360 <= t < 460: b |= L                        # もう一度モードへ (449 から)
+    if t == 470: b |= F                              # 決定でやめる
+    if 500 <= t < 600: b |= L                        # もう一度 (589 から)、さわらず10秒でやめる
+    if t >= 950: b |= F                              # 決定を3秒で終了 (左はモード用なので終了しない)
+    return b
+
+
+def scenario_cmdmode(player_path):
+    """左を3秒押し続けるとコマンド入力モード。そこでコマンドを入れると曲"""
+    conf = dict(CHARA, idleShow="clock", idleOff=0, dbl="", long="up", longTime=3, singMode="image", singA=7, faces=[None] * 5, blink=None,
+                volBtn="right", cmdBtn="left", cmdHold=3)
+    dev, same, note, bus, frames = run_variant(player_path, conf, make_song(), script_cmdmode, DATE, TIME0)
+    clock = lambda t: read_big(dev[t - 1], 9, [1, 8, 18, 25]) == "1137"
+    enter = lambda t: read_letters(dev[t - 1], 6, [6, 10, 14, 18, 22]) == "ENTER"
+    ng = lambda t: read_letters(dev[t - 1], 22, [12, 16]) == "NO"
+    sing = lambda t: dev[t - 1] == frames[7]
+    filled = lambda t: sum(1 for i in range(6) if (dev[t - 1][16] >> (4 + i * 4 + 1)) & 1)
+    res = [(same, f"[コマンド入力モード] プレビューと実機の画面が {note}")]
+    res.append((all(clock(t) for t in (60, 100, 160)) and not any(sing(t) for t in range(20, 80)), "[コマンド入力モード] モードの外でコマンドを押しても曲にならない・左を押している途中は時計"))
+    res.append((enter(170) and filled(170) == 0, "[コマンド入力モード] 左を3秒で「ENTER」と □ 6個"))
+    res.append((filled(213) == 3, f"[コマンド入力モード] 押した数だけ ■ になる ({filled(213)})"))
+    res.append((ng(231) and ng(255) and not ng(262) and filled(262) == 0, "[コマンド入力モード] まちがえると「NO」が1秒出て最初から"))
+    res.append((sing(301) and not sing(299), "[コマンド入力モード] 正しく入れると曲"))
+    res.append((clock(345), "[コマンド入力モード] 決定で曲を止めて時計"))
+    res.append((enter(450) and clock(472), "[コマンド入力モード] モードの中で決定を押すとやめる"))
+    res.append((enter(590) and enter(880) and clock(892), "[コマンド入力モード] 10秒さわらないとやめる"))
+    res.append((len(dev) >= 950 + 88, f"[コマンド入力モード] 終了は決定の3秒長押し ({len(dev)})"))
+    return res
+
+
 TAPS = {100 + k * 6: bb for k, bb in enumerate([U, U, D, D, L, R])}
 
 
@@ -627,7 +667,7 @@ def main(player_path, volume=0):
     icount, _, iaddr = struct.unpack_from("<HHI", data, 0x100)
     check(icount == 1 and iaddr == info[2], "メモリーカード画面のアイコンは待機の顔1枚")
     if volume == 0:
-        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path) + scenario_save(player_path) + scenario_tap(player_path):
+        for cond, msg in scenario_b(player_path) + scenario_anim(player_path) + scenario_set(player_path) + scenario_idle_clock(player_path) + scenario_user(player_path) + scenario_volume(player_path) + scenario_save(player_path) + scenario_tap(player_path) + scenario_cmdmode(player_path):
             check(cond, msg)
     sys.exit(0 if ok else 1)
 
